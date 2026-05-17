@@ -1,0 +1,16 @@
+# Generated PDF outputs
+thesis-output.pdf
+template/thesis.pdf
+
+# Typst cache
+.typst/
+
+# macOS
+.DS_Store
+
+# Backup files
+*.bak
+*.typ.bak
+
+# CodeBuddy
+.codebuddy/
