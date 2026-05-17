@@ -1,0 +1,33 @@
+- generic [ref=e30]:
+  - heading "用户注册" [level=2] [ref=e31]
+  - generic [ref=e32]:
+    - generic [ref=e33]:
+      - generic [ref=e34]: "* 用户名"
+      - textbox "* 用户名" [ref=e38]:
+        - /placeholder: 请输入用户名（4-20位字母或数字）
+    - generic [ref=e39]:
+      - generic [ref=e40]: "* 密码"
+      - textbox "* 密码" [ref=e44]:
+        - /placeholder: 请输入密码（至少6位）
+    - generic [ref=e45]:
+      - generic [ref=e46]: "* 确认密码"
+      - textbox "* 确认密码" [ref=e50]:
+        - /placeholder: 请再次输入密码
+    - generic [ref=e51]:
+      - generic [ref=e52]: "* 注册角色"
+      - radiogroup "* 注册角色" [ref=e54]:
+        - generic [ref=e55] [cursor=pointer]:
+          - radio "发货用户" [checked] [ref=e57]
+          - generic [ref=e59]: 发货用户
+        - generic [ref=e60] [cursor=pointer]:
+          - radio "商户" [ref=e62]
+          - generic [ref=e64]: 商户
+        - generic [ref=e65] [cursor=pointer]:
+          - radio "司机" [ref=e67]
+          - generic [ref=e69]: 司机
+    - alert [ref=e70]:
+      - generic [ref=e72]: 发货用户注册后可直接登录，用于创建个人运单和查看物流进度。
+    - button "立即注册" [ref=e75] [cursor=pointer]:
+      - generic [ref=e76]: 立即注册
+    - button "已有账号？返回登录" [ref=e79] [cursor=pointer]:
+      - generic [ref=e80]: 已有账号？返回登录

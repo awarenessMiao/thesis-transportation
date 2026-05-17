@@ -1,0 +1,23 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - heading "智能物流管理系统" [level=2] [ref=e6]
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e9]: 用户名
+        - textbox "用户名" [ref=e13]:
+          - /placeholder: 请输入用户名
+          - text: admin
+      - generic [ref=e14]:
+        - generic [ref=e15]: 密码
+        - generic [ref=e18]:
+          - textbox "密码" [ref=e19]:
+            - /placeholder: 请输入密码
+            - text: "123456"
+          - img [ref=e30] [cursor=pointer]
+      - button "登录" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: 登录
+      - button "注册新账号" [ref=e26] [cursor=pointer]:
+        - generic [ref=e27]: 注册新账号
+  - alert [ref=e33]:
+    - img [ref=e35]
+    - paragraph [ref=e37]: 操作失败

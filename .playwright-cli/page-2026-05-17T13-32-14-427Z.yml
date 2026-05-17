@@ -1,0 +1,138 @@
+- generic [ref=e34]:
+  - complementary [ref=e35]:
+    - generic [ref=e36]: 智能物流
+    - menubar [ref=e37]:
+      - menuitem "承运物管理" [ref=e38] [cursor=pointer]:
+        - img [ref=e40]
+        - generic [ref=e44]: 承运物管理
+      - menuitem "发货订单" [ref=e45] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e49]: 发货订单
+      - menuitem "库存管理" [ref=e50] [cursor=pointer]:
+        - img [ref=e52]
+        - generic [ref=e54]: 库存管理
+      - menuitem "仓储管理" [ref=e55] [cursor=pointer]:
+        - img [ref=e57]
+        - generic [ref=e61]: 仓储管理
+      - menuitem "企业信息" [ref=e62] [cursor=pointer]:
+        - img [ref=e64]
+        - generic [ref=e66]: 企业信息
+  - generic [ref=e67]:
+    - generic [ref=e68]:
+      - generic [ref=e69]: 智能物流管理系统
+      - generic [ref=e70]:
+        - generic [ref=e72]: 货主
+        - generic [ref=e73]: merchant
+        - button "退出登录" [ref=e74] [cursor=pointer]:
+          - generic [ref=e75]: 退出登录
+    - main [ref=e76]:
+      - generic [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e79]:
+            - textbox "搜索货物名称 / 编码" [ref=e82]
+            - generic [ref=e84] [cursor=pointer]:
+              - generic:
+                - combobox [ref=e86]
+                - generic [ref=e87]: 全部状态
+              - img [ref=e90]
+            - button "搜索" [ref=e92] [cursor=pointer]:
+              - img [ref=e94]
+              - generic [ref=e96]: 搜索
+            - generic [ref=e97]:
+              - generic [ref=e99]: 全部 2
+              - generic [ref=e101]: 启用 2
+              - generic [ref=e103]: 停用 2
+              - generic [ref=e105]: 待审核 2
+          - button "新增货物" [ref=e106] [cursor=pointer]:
+            - img [ref=e108]
+            - generic [ref=e110]: 新增货物
+        - generic [ref=e112]:
+          - generic [ref=e114]:
+            - table [ref=e116]:
+              - rowgroup [ref=e127]:
+                - row "货物名称 货物编码 申报价值 计量单位 重量(kg) 已发件数 状态 创建时间 操作" [ref=e128]:
+                  - columnheader "货物名称" [ref=e129]:
+                    - generic [ref=e130]: 货物名称
+                  - columnheader "货物编码" [ref=e131]:
+                    - generic [ref=e132]: 货物编码
+                  - columnheader "申报价值" [ref=e133]:
+                    - generic [ref=e134]: 申报价值
+                  - columnheader "计量单位" [ref=e135]:
+                    - generic [ref=e136]: 计量单位
+                  - columnheader "重量(kg)" [ref=e137]:
+                    - generic [ref=e138]: 重量(kg)
+                  - columnheader "已发件数" [ref=e139]:
+                    - generic [ref=e140]: 已发件数
+                  - columnheader "状态" [ref=e141]:
+                    - generic [ref=e142]: 状态
+                  - columnheader "创建时间" [ref=e143]:
+                    - generic [ref=e144]: 创建时间
+                  - columnheader "操作" [ref=e145]:
+                    - generic [ref=e146]: 操作
+            - table [ref=e151]:
+              - rowgroup [ref=e162]:
+                - row "优质坚果礼盒 SP001 ¥128 盒 1.5 26 启用 2026/5/17 13:18:30 详情 编辑 删除" [ref=e163]:
+                  - cell "优质坚果礼盒" [ref=e164]:
+                    - generic [ref=e165]: 优质坚果礼盒
+                  - cell "SP001" [ref=e166]:
+                    - generic [ref=e167]: SP001
+                  - cell "¥128" [ref=e168]:
+                    - generic [ref=e169]: ¥128
+                  - cell "盒" [ref=e170]:
+                    - generic [ref=e171]: 盒
+                  - cell "1.5" [ref=e172]:
+                    - generic [ref=e173]: "1.5"
+                  - cell "26" [ref=e174]:
+                    - generic [ref=e175]: "26"
+                  - cell "启用" [ref=e176]:
+                    - generic [ref=e179]: 启用
+                  - cell "2026/5/17 13:18:30" [ref=e180]:
+                    - generic [ref=e181]: 2026/5/17 13:18:30
+                  - cell "详情 编辑 删除" [ref=e182]:
+                    - generic [ref=e183]:
+                      - button "详情" [ref=e184] [cursor=pointer]:
+                        - generic [ref=e185]: 详情
+                      - button "编辑" [ref=e186] [cursor=pointer]:
+                        - generic [ref=e187]: 编辑
+                      - button "删除" [ref=e188] [cursor=pointer]:
+                        - generic [ref=e189]: 删除
+                - row "有机果汁 SP002 ¥35 瓶 0.5 51 启用 2026/5/17 13:18:30 详情 编辑 删除" [ref=e190]:
+                  - cell "有机果汁" [ref=e191]:
+                    - generic [ref=e192]: 有机果汁
+                  - cell "SP002" [ref=e193]:
+                    - generic [ref=e194]: SP002
+                  - cell "¥35" [ref=e195]:
+                    - generic [ref=e196]: ¥35
+                  - cell "瓶" [ref=e197]:
+                    - generic [ref=e198]: 瓶
+                  - cell "0.5" [ref=e199]:
+                    - generic [ref=e200]: "0.5"
+                  - cell "51" [ref=e201]:
+                    - generic [ref=e202]: "51"
+                  - cell "启用" [ref=e203]:
+                    - generic [ref=e206]: 启用
+                  - cell "2026/5/17 13:18:30" [ref=e207]:
+                    - generic [ref=e208]: 2026/5/17 13:18:30
+                  - cell "详情 编辑 删除" [ref=e209]:
+                    - generic [ref=e210]:
+                      - button "详情" [ref=e211] [cursor=pointer]:
+                        - generic [ref=e212]: 详情
+                      - button "编辑" [ref=e213] [cursor=pointer]:
+                        - generic [ref=e214]: 编辑
+                      - button "删除" [ref=e215] [cursor=pointer]:
+                        - generic [ref=e216]: 删除
+          - generic [ref=e218]:
+            - generic [ref=e219]: 共 2 条
+            - generic [ref=e222] [cursor=pointer]:
+              - generic:
+                - combobox [ref=e224]
+                - generic [ref=e225]: 10条/页
+              - img [ref=e228]
+            - button "上一页" [disabled] [ref=e230]:
+              - generic:
+                - img
+            - list [ref=e231]:
+              - listitem "第 1 页" [ref=e232]: "1"
+            - button "下一页" [disabled] [ref=e233]:
+              - generic:
+                - img
