@@ -14,3 +14,13 @@ template/thesis.pdf
 
 # CodeBuddy
 .codebuddy/
+.codebuddy-previews/
+
+# Playwright CLI
+.playwright-cli/
+
+# Node.js (slides)
+slides/node_modules/
+
+# Archive figures
+template/figures/archive/

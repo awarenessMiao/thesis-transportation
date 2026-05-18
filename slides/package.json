@@ -1,0 +1,14 @@
+{
+  "name": "thesis-defense-slides",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build",
+    "export": "slidev export"
+  },
+  "dependencies": {
+    "@oxc-parser/binding-darwin-arm64": "^0.124.0",
+    "@slidev/cli": "^51.0.0",
+    "@slidev/theme-default": "latest"
+  }
+}

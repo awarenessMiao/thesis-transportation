@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path("/Users/miao/CodeBuddy/thesis-transportation")
 FIG_DIR = ROOT / "template" / "figures"
+SLIDES_FIG_DIR = ROOT / "slides" / "public" / "figures"
 FONT_CANDIDATES = [
     Path("/System/Library/Fonts/Hiragino Sans GB.ttc"),
     Path("/System/Library/Fonts/STHeiti Light.ttc"),
@@ -12,14 +14,15 @@ FONT_CANDIDATES = [
 FONT_PATH = next(path for path in FONT_CANDIDATES if path.exists())
 
 TEXT = "#2f2f2f"
-MUTED = "#666666"
-BORDER = "#8b8b8b"
-GRID = "#bdbdbd"
-LINE = "#7a7a7a"
-PANEL = "#f5f5f5"
-LABEL_FILL = "#fafafa"
+MUTED = "#66707a"
+BORDER = "#98a1ab"
+GRID = "#d4dbe3"
+LINE = "#747d87"
+PANEL = "#f6f7f9"
+LABEL_FILL = "#fafbfc"
 ROW_FILL = "#fcfcfc"
 BOX_FILL = "#ffffff"
+NOTE_BORDER = "#d9e0e7"
 
 DOMAIN_STYLES = {
     "user": ("#eaf2ff", "#6b8ec9"),
@@ -31,6 +34,14 @@ DOMAIN_STYLES = {
 
 def font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(FONT_PATH), size=size)
+
+
+def save_figure(img: Image.Image, filename: str, *, quality: int = 95) -> None:
+    targets = [FIG_DIR / filename]
+    if SLIDES_FIG_DIR.exists():
+        targets.append(SLIDES_FIG_DIR / filename)
+    for target in targets:
+        img.save(target, quality=quality)
 
 
 def fit_font(
@@ -124,6 +135,25 @@ def label_chip(
     draw.text((box[0] + 14, box[1] + 8), text, font=current, fill=text_fill)
 
 
+def floating_label(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[int, int],
+    text: str,
+    *,
+    size: int = 20,
+    fill: str = MUTED,
+    bg: str = "white",
+) -> None:
+    current = font(size)
+    bbox = draw.textbbox((0, 0), text, font=current)
+    w = bbox[2] - bbox[0] + 18
+    h = bbox[3] - bbox[1] + 10
+    x, y = center
+    box = (x - w // 2, y - h // 2, x + w // 2, y + h // 2)
+    draw.rounded_rectangle(box, radius=10, fill=bg)
+    draw.text((box[0] + 9, box[1] + 5), text, font=current, fill=fill)
+
+
 def anchor(box: tuple[int, int, int, int], side: str, ratio: float = 0.5) -> tuple[int, int]:
     x0, y0, x1, y1 = box
     if side == "top":
@@ -135,6 +165,46 @@ def anchor(box: tuple[int, int, int, int], side: str, ratio: float = 0.5) -> tup
     return x1, int(y0 + (y1 - y0) * ratio)
 
 
+def _clamp_ratio(value: float, lower: float = 0.14, upper: float = 0.86) -> float:
+    return max(lower, min(upper, value))
+
+
+def anchor_at_x(box: tuple[int, int, int, int], side: str, x: int) -> tuple[int, int]:
+    x0, _, x1, _ = box
+    if x1 == x0:
+        return anchor(box, side, 0.5)
+    ratio = _clamp_ratio((x - x0) / (x1 - x0))
+    return anchor(box, side, ratio)
+
+
+def anchor_at_y(box: tuple[int, int, int, int], side: str, y: int) -> tuple[int, int]:
+    _, y0, _, y1 = box
+    if y1 == y0:
+        return anchor(box, side, 0.5)
+    ratio = _clamp_ratio((y - y0) / (y1 - y0), 0.18, 0.82)
+    return anchor(box, side, ratio)
+
+
+def _int_point(point: tuple[float, float]) -> tuple[int, int]:
+    return round(point[0]), round(point[1])
+
+
+def draw_polyline(
+    draw: ImageDraw.ImageDraw,
+    points: list[tuple[float, float] | tuple[int, int]],
+    *,
+    fill: str,
+    width: int,
+) -> None:
+    if len(points) < 2:
+        return
+    int_points = [_int_point((float(x), float(y))) for x, y in points]
+    draw.line(int_points, fill=fill, width=width)
+    joint_radius = max(2, width // 2)
+    for px, py in int_points[1:-1]:
+        draw.ellipse((px - joint_radius, py - joint_radius, px + joint_radius, py + joint_radius), fill=fill)
+
+
 def draw_connection(
     draw: ImageDraw.ImageDraw,
     points: list[tuple[int, int]],
@@ -144,13 +214,48 @@ def draw_connection(
     mid_label: tuple[str, tuple[int, int]] | None = None,
     width: int = 3,
 ) -> None:
-    draw.line(points, fill=LINE, width=width)
+    draw_polyline(draw, points, fill=LINE, width=width)
     if start_card:
-        label_chip(draw, start_card[1], start_card[0], size=20)
+        floating_label(draw, start_card[1], start_card[0], size=18)
     if end_card:
-        label_chip(draw, end_card[1], end_card[0], size=20)
+        floating_label(draw, end_card[1], end_card[0], size=18)
     if mid_label:
-        label_chip(draw, mid_label[1], mid_label[0], size=20, fill="#fefefe")
+        floating_label(draw, mid_label[1], mid_label[0], size=20, fill=MUTED)
+
+
+def draw_arrow_path(
+    draw: ImageDraw.ImageDraw,
+    points: list[tuple[int, int]],
+    *,
+    fill: str = LINE,
+    width: int = 4,
+    label: tuple[str, tuple[int, int]] | None = None,
+    arrow_length: int | None = None,
+    arrow_half_width: int | None = None,
+    end_gap: int = 0,
+) -> None:
+    if len(points) < 2:
+        return
+    start = (float(points[-2][0]), float(points[-2][1]))
+    tip = (float(points[-1][0]), float(points[-1][1]))
+    dx = tip[0] - start[0]
+    dy = tip[1] - start[1]
+    seg_len = math.hypot(dx, dy)
+    if seg_len == 0:
+        return
+    ux = dx / seg_len
+    uy = dy / seg_len
+    arrow_length = arrow_length or max(14, width * 4)
+    arrow_half_width = arrow_half_width or max(6, round(arrow_length * 0.45))
+    adjusted_tip = (tip[0] - ux * end_gap, tip[1] - uy * end_gap)
+    base_center = (adjusted_tip[0] - ux * arrow_length, adjusted_tip[1] - uy * arrow_length)
+    shaft_points = [(float(x), float(y)) for x, y in points[:-1]] + [base_center]
+    draw_polyline(draw, shaft_points, fill=fill, width=width)
+    left = (base_center[0] + uy * arrow_half_width, base_center[1] - ux * arrow_half_width)
+    right = (base_center[0] - uy * arrow_half_width, base_center[1] + ux * arrow_half_width)
+    draw.polygon([_int_point(adjusted_tip), _int_point(left), _int_point(right)], fill=fill)
+    if label:
+        floating_label(draw, label[1], label[0], size=20, fill=MUTED)
 
 
 def entity_card(
@@ -253,7 +358,7 @@ def draw_architecture_overview() -> None:
     for box, text in zip(distribute_row(ix0, iy0 + 14, ix1, iy1 - 14, 3, gap), ["MySQL", "Redis", "Graph Cache"]):
         rounded_box(draw, box, text, size=34)
 
-    img.save(FIG_DIR / "architecture-overview.png", quality=95)
+    save_figure(img, "architecture-overview.png", quality=95)
 
 
 def draw_frontend_architecture() -> None:
@@ -335,17 +440,17 @@ def draw_frontend_architecture() -> None:
 
 
 def draw_er_diagram() -> None:
-    img = Image.new("RGB", (3200, 2280), "white")
+    img = Image.new("RGB", (3200, 1900), "white")
     draw = ImageDraw.Draw(img)
 
-    outer = (50, 50, 3150, 2230)
-    rounded_panel(draw, outer, fill="white", outline=BORDER, width=3, radius=22)
+    outer = (50, 50, 3150, 1850)
+    rounded_panel(draw, outer, fill="white", outline="#d7d7d7", width=2, radius=20)
 
     groups = {
-        "user": (90, 110, 1040, 900),
-        "inventory": (1090, 110, 1950, 900),
-        "order": (90, 980, 1870, 2030),
-        "dispatch": (1990, 980, 3110, 2030),
+        "user": (90, 100, 1050, 860),
+        "inventory": (1090, 100, 2010, 860),
+        "order": (90, 950, 1870, 1730),
+        "dispatch": (1960, 950, 3110, 1730),
     }
     titles = {
         "user": "用户与角色域",
@@ -355,216 +460,397 @@ def draw_er_diagram() -> None:
     }
     for key, box in groups.items():
         fill, accent = DOMAIN_STYLES[key]
-        rounded_panel(draw, box, fill="#fcfcfc", outline=accent, width=3, radius=20)
+        rounded_panel(draw, box, fill="#fcfcfc", outline=accent, width=2, radius=20)
         gx0, gy0, _, _ = box
-        draw.rounded_rectangle((gx0 + 24, gy0 + 22, gx0 + 240, gy0 + 78), radius=14, fill=fill, outline=accent, width=2)
-        draw_fitted_text(draw, (gx0 + 28, gy0 + 24, gx0 + 236, gy0 + 76), titles[key], size=28, min_size=18)
+        draw.rounded_rectangle((gx0 + 24, gy0 + 22, gx0 + 246, gy0 + 76), radius=12, fill=fill, outline=accent, width=2)
+        draw_fitted_text(draw, (gx0 + 28, gy0 + 24, gx0 + 242, gy0 + 74), titles[key], size=28, min_size=18)
 
     boxes = {
-        "user": (380, 220, 670, 378),
-        "customer": (120, 470, 390, 628),
-        "shop": (435, 470, 705, 628),
-        "driver": (750, 470, 1020, 628),
-        "address": (120, 680, 390, 838),
-        "product": (1180, 250, 1470, 408),
-        "warehouse": (1590, 250, 1880, 408),
-        "order_info": (430, 1090, 890, 1280),
-        "order_item": (430, 1380, 890, 1540),
-        "order_delivery": (1060, 1090, 1410, 1250),
-        "logistics_route": (1060, 1380, 1410, 1540),
-        "dispatch_pool": (2120, 1080, 2480, 1240),
-        "logistics_batch": (2570, 1080, 2930, 1240),
-        "national_hub": (2120, 1420, 2480, 1580),
-        "flow_plan": (2570, 1420, 2930, 1580),
+        "user": (360, 210, 710, 360),
+        "customer": (120, 470, 400, 620),
+        "shop": (440, 470, 720, 620),
+        "driver": (720, 470, 1000, 620),
+        "address": (120, 670, 400, 820),
+        "product": (1180, 300, 1520, 450),
+        "warehouse": (1610, 300, 1950, 450),
+        "order_info": (520, 1080, 1020, 1240),
+        "order_item": (260, 1400, 760, 1560),
+        "order_delivery": (1090, 1080, 1590, 1240),
+        "logistics_route": (1090, 1400, 1590, 1560),
+        "dispatch_pool": (2080, 1080, 2440, 1240),
+        "logistics_batch": (2670, 1080, 3030, 1240),
+        "national_hub": (2080, 1400, 2440, 1560),
+        "flow_plan": (2670, 1400, 3030, 1560),
     }
 
-    entity_card(draw, boxes["user"], "User", "id · username · permission", domain="user")
-    entity_card(draw, boxes["customer"], "CustomerInfo", "id · user_id · phone", domain="user")
-    entity_card(draw, boxes["shop"], "ShopInfo", "id · user_id · shop_name", domain="user")
-    entity_card(draw, boxes["driver"], "DriverInfo", "id · user_id · license_no", domain="user")
-    entity_card(draw, boxes["address"], "CustomerAddress", "id · customer_id · lng/lat", domain="user")
+    entity_card(draw, boxes["user"], "User", "统一账号主体", domain="user")
+    entity_card(draw, boxes["customer"], "CustomerInfo", "发货用户身份", domain="user")
+    entity_card(draw, boxes["shop"], "ShopInfo", "商户主体", domain="user")
+    entity_card(draw, boxes["driver"], "DriverInfo", "运输员身份", domain="user")
+    entity_card(draw, boxes["address"], "CustomerAddress", "收货地址集合", domain="user")
 
-    entity_card(draw, boxes["product"], "ProductInfo", "id · shop_id · price", domain="inventory")
-    entity_card(draw, boxes["warehouse"], "Warehouse", "id · detail_address · hub_id", domain="inventory")
+    entity_card(draw, boxes["product"], "ProductInfo", "商品主数据", domain="inventory")
+    entity_card(draw, boxes["warehouse"], "Warehouse", "发货 / 中转仓", domain="inventory")
 
-    entity_card(draw, boxes["order_info"], "OrderInfo", "order_no · customer_id · shop_id\naddress_id · warehouse_id · flow_plan_id", domain="order")
-    entity_card(draw, boxes["order_item"], "OrderItem", "order_id · product_id · quantity", domain="order")
-    entity_card(draw, boxes["order_delivery"], "OrderDelivery", "order_id · driver_id · status", domain="order")
-    entity_card(draw, boxes["logistics_route"], "LogisticsRoute", "order_id · segment_type · hub_id", domain="order")
+    entity_card(draw, boxes["order_info"], "OrderInfo", "订单聚合根", domain="order")
+    entity_card(draw, boxes["order_item"], "OrderItem", "订单明细", domain="order")
+    entity_card(draw, boxes["order_delivery"], "OrderDelivery", "配送执行记录", domain="order")
+    entity_card(draw, boxes["logistics_route"], "LogisticsRoute", "路线片段", domain="order")
 
-    entity_card(draw, boxes["dispatch_pool"], "DispatchPool", "order_id · origin_hub · dest_hub", domain="dispatch")
-    entity_card(draw, boxes["logistics_batch"], "LogisticsBatch", "batch_no · warehouse_id · hub_id", domain="dispatch")
-    entity_card(draw, boxes["national_hub"], "NationalHub", "city · hub_level · max_capacity", domain="dispatch")
-    entity_card(draw, boxes["flow_plan"], "FlowPlan", "plan_date · total_cost · status", domain="dispatch")
-
-    draw_connection(
-        draw,
-        [anchor(boxes["user"], "bottom", 0.26), (456, 424), (255, 424), anchor(boxes["customer"], "top", 0.5)],
-        start_card=("1", (456, 396)),
-        end_card=("1", (255, 444)),
-        mid_label=("扩展", (356, 392)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["user"], "bottom", 0.5), (525, 436), anchor(boxes["shop"], "top", 0.5)],
-        start_card=("1", (525, 398)),
-        end_card=("1", (570, 444)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["user"], "bottom", 0.74), (594, 424), (885, 424), anchor(boxes["driver"], "top", 0.5)],
-        start_card=("1", (594, 396)),
-        end_card=("1", (885, 444)),
-        mid_label=("扩展", (744, 392)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["customer"], "bottom", 0.5), (255, 652), anchor(boxes["address"], "top", 0.5)],
-        start_card=("1", (286, 646)),
-        end_card=("N", (286, 664)),
-        mid_label=("拥有地址", (168, 652)),
-    )
+    entity_card(draw, boxes["dispatch_pool"], "DispatchPool", "待调度订单池", domain="dispatch")
+    entity_card(draw, boxes["logistics_batch"], "LogisticsBatch", "聚类运输批次", domain="dispatch")
+    entity_card(draw, boxes["national_hub"], "NationalHub", "城市 Hub 节点", domain="dispatch")
+    entity_card(draw, boxes["flow_plan"], "FlowPlan", "干线运力方案", domain="dispatch")
 
     draw_connection(
         draw,
-        [anchor(boxes["shop"], "right", 0.38), (830, 530), (1080, 530), (1080, 329), anchor(boxes["product"], "left", 0.5)],
-        start_card=("1", (735, 514)),
-        end_card=("N", (1148, 304)),
-        mid_label=("经营商品", (960, 502)),
+        [anchor(boxes["user"], "bottom", 0.26), (450, 414), (260, 414), anchor(boxes["customer"], "top", 0.5)],
+        start_card=("1", (450, 390)),
+        end_card=("1", (260, 442)),
+        mid_label=("映射", (355, 386)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["product"], "right", 0.5), (1530, 329), anchor(boxes["warehouse"], "left", 0.5)],
-        start_card=("M", (1500, 298)),
-        end_card=("N", (1560, 298)),
-        mid_label=("库存关系", (1530, 278)),
+        [anchor(boxes["user"], "bottom", 0.5), (535, 432), anchor(boxes["shop"], "top", 0.5)],
+        start_card=("1", (535, 390)),
+        end_card=("1", (580, 442)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["user"], "bottom", 0.74), (620, 414), (860, 414), anchor(boxes["driver"], "top", 0.5)],
+        start_card=("1", (620, 390)),
+        end_card=("1", (860, 442)),
+        mid_label=("映射", (742, 386)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["customer"], "bottom", 0.5), (260, 645), anchor(boxes["address"], "top", 0.5)],
+        start_card=("1", (286, 640)),
+        end_card=("N", (286, 652)),
+        mid_label=("拥有", (178, 646)),
     )
 
     draw_connection(
         draw,
-        [anchor(boxes["customer"], "bottom", 0.72), (316, 960), (540, 960), anchor(boxes["order_info"], "top", 0.18)],
-        start_card=("1", (346, 934)),
-        end_card=("N", (540, 1060)),
-        mid_label=("下单", (430, 930)),
+        [anchor(boxes["shop"], "right", 0.40), (1020, 530), (1020, 375), anchor(boxes["product"], "left", 0.5)],
+        start_card=("1", (748, 514)),
+        end_card=("N", (1148, 352)),
+        mid_label=("经营", (1038, 500)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["shop"], "bottom", 0.45), (556, 1008), anchor(boxes["order_info"], "top", 0.44)],
-        start_card=("1", (586, 656)),
-        end_card=("N", (632, 1060)),
-        mid_label=("发货方", (664, 982)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["address"], "right", 0.44), (470, 750), (470, 1185), anchor(boxes["order_info"], "left", 0.56)],
-        start_card=("1", (416, 724)),
-        end_card=("N", (402, 1185)),
-        mid_label=("收货地址", (360, 1026)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["warehouse"], "bottom", 0.34), (1688, 950), (820, 950), anchor(boxes["order_info"], "top", 0.84)],
-        start_card=("1", (1718, 924)),
-        end_card=("N", (820, 1060)),
-        mid_label=("出库仓", (1260, 926)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["order_info"], "bottom", 0.5), (660, 1325), anchor(boxes["order_item"], "top", 0.5)],
-        start_card=("1", (690, 1310)),
-        end_card=("N", (690, 1348)),
-        mid_label=("包含", (578, 1325)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["product"], "bottom", 0.36), (1284, 920), (1284, 1460), anchor(boxes["order_item"], "right", 0.5)],
-        start_card=("1", (1318, 892)),
-        end_card=("N", (918, 1460)),
-        mid_label=("商品引用", (1370, 1200)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["order_info"], "right", 0.38), (960, 1162), anchor(boxes["order_delivery"], "left", 0.45)],
-        start_card=("1", (934, 1130)),
-        end_card=("1", (1032, 1130)),
-        mid_label=("生成配送", (996, 1098)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["driver"], "bottom", 0.78), (940, 980), anchor(boxes["order_delivery"], "top", 0.22)],
-        start_card=("1", (964, 954)),
-        end_card=("N", (1138, 1062)),
-        mid_label=("执行配送", (1084, 932)),
-    )
-    draw_connection(
-        draw,
-        [anchor(boxes["order_info"], "right", 0.78), (980, 1238), (980, 1460), anchor(boxes["logistics_route"], "left", 0.5)],
-        start_card=("1", (952, 1262)),
-        end_card=("N", (1032, 1460)),
-        mid_label=("生成路线", (900, 1360)),
+        [anchor(boxes["product"], "right", 0.5), (1570, 375), anchor(boxes["warehouse"], "left", 0.5)],
+        start_card=("M", (1540, 344)),
+        end_card=("N", (1600, 344)),
+        mid_label=("库存", (1570, 320)),
     )
 
     draw_connection(
         draw,
-        [anchor(boxes["order_info"], "right", 0.20), (1580, 1128), anchor(boxes["dispatch_pool"], "left", 0.35)],
-        start_card=("1", (936, 1100)),
-        end_card=("0..1", (2062, 1100)),
-        mid_label=("入调度池", (1578, 1086)),
+        [anchor(boxes["customer"], "bottom", 0.72), (316, 930), (620, 930), anchor(boxes["order_info"], "top", 0.20)],
+        start_card=("1", (346, 904)),
+        end_card=("N", (620, 1048)),
+        mid_label=("下单", (430, 904)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["dispatch_pool"], "right", 0.5), (2520, 1160), anchor(boxes["logistics_batch"], "left", 0.5)],
-        start_card=("N", (2490, 1128)),
-        end_card=("1", (2548, 1128)),
-        mid_label=("聚类成批", (2520, 1086)),
+        [anchor(boxes["shop"], "bottom", 0.5), (580, 1010), (680, 1010), anchor(boxes["order_info"], "top", 0.32)],
+        start_card=("1", (606, 644)),
+        end_card=("N", (680, 1048)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["logistics_batch"], "left", 0.78), (2445, 1500), anchor(boxes["logistics_route"], "right", 0.60)],
-        start_card=("1", (2536, 1248)),
-        end_card=("N", (1436, 1476)),
-        mid_label=("生成批次路线", (2140, 1460)),
+        [anchor(boxes["address"], "right", 0.44), (470, 736), (470, 1160), anchor(boxes["order_info"], "left", 0.56)],
+        start_card=("1", (420, 710)),
+        end_card=("N", (494, 1160)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["warehouse"], "bottom", 0.72), (1800, 1288), (2300, 1288), anchor(boxes["national_hub"], "top", 0.5)],
-        start_card=("N", (1828, 1260)),
-        end_card=("1", (2300, 1392)),
-        mid_label=("归属城市Hub", (2040, 1254)),
+        [anchor(boxes["warehouse"], "bottom", 0.32), (1720, 930), (930, 930), anchor(boxes["order_info"], "top", 0.82)],
+        start_card=("1", (1750, 904)),
+        end_card=("N", (930, 1048)),
+        mid_label=("出库", (1310, 904)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["order_info"], "right", 0.90), (1640, 1270), (2750, 1270), anchor(boxes["flow_plan"], "top", 0.5)],
-        start_card=("N", (938, 1252)),
-        end_card=("1", (2750, 1392)),
-        mid_label=("跨城运力分配", (2140, 1236)),
+        [anchor(boxes["order_info"], "bottom", 0.38), (710, 1320), anchor(boxes["order_item"], "top", 0.62)],
+        start_card=("1", (740, 1302)),
+        end_card=("N", (560, 1368)),
+        mid_label=("包含", (640, 1322)),
     )
     draw_connection(
         draw,
-        [anchor(boxes["national_hub"], "right", 0.5), (2520, 1500), anchor(boxes["flow_plan"], "left", 0.5)],
-        start_card=("N", (2494, 1468)),
-        end_card=("N", (2548, 1468)),
-        mid_label=("规划使用Hub网络", (2520, 1426)),
+        [anchor(boxes["product"], "bottom", 0.35), (1299, 1480), anchor(boxes["order_item"], "right", 0.50)],
+        start_card=("1", (1334, 474)),
+        end_card=("N", (796, 1480)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["order_info"], "right", 0.50), (1054, 1160), anchor(boxes["order_delivery"], "left", 0.50)],
+        start_card=("1", (1038, 1128)),
+        end_card=("1", (1072, 1128)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["driver"], "bottom", 0.82), (952, 980), (1230, 980), anchor(boxes["order_delivery"], "top", 0.28)],
+        start_card=("1", (980, 952)),
+        end_card=("N", (1230, 1050)),
+        mid_label=("执行", (1090, 952)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["order_info"], "right", 0.78), (1060, 1205), (1060, 1480), anchor(boxes["logistics_route"], "left", 0.50)],
+        start_card=("1", (1036, 1232)),
+        end_card=("N", (1068, 1480)),
+        mid_label=("规划", (998, 1360)),
+    )
+
+    draw_connection(
+        draw,
+        [anchor(boxes["order_info"], "right", 0.20), (1038, 1112), (1038, 1030), (1830, 1030), (1830, 1140), anchor(boxes["dispatch_pool"], "left", 0.38)],
+        start_card=("1", (1044, 1090)),
+        end_card=("0..1", (2040, 1110)),
+        mid_label=("入池", (1832, 996)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["dispatch_pool"], "right", 0.50), (2555, 1160), anchor(boxes["logistics_batch"], "left", 0.50)],
+        start_card=("N", (2528, 1128)),
+        end_card=("1", (2582, 1128)),
+        mid_label=("聚类", (2555, 1088)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["warehouse"], "bottom", 0.72), (1855, 930), (2260, 930), anchor(boxes["national_hub"], "top", 0.50)],
+        start_card=("N", (1884, 904)),
+        end_card=("1", (2260, 1368)),
+        mid_label=("归属", (2050, 904)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["order_info"], "right", 0.92), (1660, 1260), (2850, 1260), anchor(boxes["flow_plan"], "top", 0.50)],
+        start_card=("N", (1040, 1234)),
+        end_card=("1", (2850, 1368)),
+        mid_label=("运力分配", (2240, 1226)),
+    )
+    draw_connection(
+        draw,
+        [anchor(boxes["national_hub"], "right", 0.50), (2550, 1480), anchor(boxes["flow_plan"], "left", 0.50)],
+        start_card=("N", (2522, 1448)),
+        end_card=("N", (2578, 1448)),
+        mid_label=("干线网络", (2550, 1410)),
     )
 
     draw_fitted_text(
         draw,
-        (2120, 1840, 3030, 1970),
-        "注：本图采用论文型概念 E-R 表达，仅展示支撑系统说明的核心实体与关键基数；字段级细节和辅助表见后续关系表。",
+        (190, 1772, 3020, 1828),
+        "注：本图采用论文型概念 E-R 表达，仅保留核心实体与主关系；字段细节、辅助表及算法中间表见后续关系表与实现说明。",
         size=24,
         min_size=18,
         align="left",
         fill=MUTED,
     )
 
-    img.save(FIG_DIR / "er-diagram.png", quality=96)
+    save_figure(img, "er-diagram.png", quality=96)
+
+
+def draw_core_business_flow(size: tuple[int, int] = (2600, 1180)) -> None:
+    width, height = size
+    scale = min(width / 2600, height / 1180)
+
+    def u(value: int) -> int:
+        return max(1, round(value * scale))
+
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+
+    mono_outline = "#111111"
+    mono_grid = "#8c8c8c"
+    mono_fill = "#ffffff"
+
+    outer = (u(80), u(70), width - u(80), height - u(70))
+    x0, y0, x1, y1 = outer
+    label_w = u(240)
+    header_h = u(142)
+    row_h = (y1 - y0 - header_h) // 4
+    content_x0 = x0 + label_w
+    content_w = x1 - content_x0
+
+    outer_width = u(3)
+    panel_width = u(2)
+    connector_width = max(2, u(4))
+    divider_width = u(2)
+    grid_width = max(1, u(1))
+    box_outline_width = u(2)
+    corner_radius = u(22)
+    box_radius = u(18)
+
+    lane_styles = [
+        ("参与角色", mono_fill, mono_outline),
+        ("订单服务", mono_fill, mono_outline),
+        ("物流服务", mono_fill, mono_outline),
+        ("运输员服务", mono_fill, mono_outline),
+    ]
+    stage_styles = [
+        ("1 下单受理", mono_fill, mono_outline),
+        ("2 仓配建模", mono_fill, mono_outline),
+        ("3 调度决策", mono_fill, mono_outline),
+        ("4 干线履约", mono_fill, mono_outline),
+        ("5 到站激活", mono_fill, mono_outline),
+        ("6 末端签收", mono_fill, mono_outline),
+    ]
+
+    rounded_panel(draw, outer, fill="white", outline=mono_outline, width=outer_width, radius=corner_radius)
+    draw.rectangle((x0, y0, x0 + label_w, y1), fill=mono_fill)
+    draw.line((content_x0, y0, content_x0, y1), fill=mono_outline, width=divider_width)
+    draw.line((x0, y0 + header_h, x1, y0 + header_h), fill=mono_outline, width=divider_width)
+
+    stage_edges = [content_x0 + round(content_w * idx / 6) for idx in range(7)]
+    for edge_x in stage_edges[1:-1]:
+        draw.line((edge_x, y0, edge_x, y1), fill=mono_grid, width=grid_width)
+
+    for idx, (label, fill, accent) in enumerate(stage_styles):
+        sx0 = stage_edges[idx] + u(18)
+        sx1 = stage_edges[idx + 1] - u(18)
+        rounded_panel(draw, (sx0, y0 + u(20), sx1, y0 + header_h - u(22)), fill=fill, outline=accent, width=panel_width, radius=box_radius)
+        draw_fitted_text(draw, (sx0 + u(8), y0 + u(24), sx1 - u(8), y0 + header_h - u(26)), label, size=u(31), min_size=u(20), fill=mono_outline)
+
+    for idx, (label, fill, accent) in enumerate(lane_styles):
+        ry0 = y0 + header_h + idx * row_h
+        ry1 = ry0 + row_h
+        draw.rectangle((content_x0, ry0, x1, ry1), fill=fill)
+        if idx > 0:
+            draw.line((x0, ry0, x1, ry0), fill=mono_grid, width=panel_width)
+        rounded_panel(draw, (x0 + u(22), ry0 + u(34), x0 + label_w - u(22), ry1 - u(34)), fill=fill, outline=accent, width=panel_width, radius=box_radius)
+        draw_fitted_text(draw, (x0 + u(28), ry0 + u(38), x0 + label_w - u(28), ry1 - u(38)), label, size=u(33), min_size=u(20), fill=mono_outline)
+
+    def cell_bounds(col_start: int, row: int, col_end: int | None = None) -> tuple[int, int, int, int]:
+        col_end = col_start if col_end is None else col_end
+        cx0 = stage_edges[col_start - 1]
+        cx1 = stage_edges[col_end]
+        ry0 = y0 + header_h + (row - 1) * row_h
+        ry1 = ry0 + row_h
+        return cx0, ry0, cx1, ry1
+
+    def flow_box(
+        col_start: int,
+        row: int,
+        text: str,
+        *,
+        accent: str,
+        fill: str = BOX_FILL,
+        size: int = 30,
+        height_value: int = 96,
+        vertical: str = "center",
+        margin_x: int = 26,
+        margin_left: int | None = None,
+        margin_right: int | None = None,
+        col_end: int | None = None,
+    ) -> tuple[int, int, int, int]:
+        cx0, ry0, cx1, ry1 = cell_bounds(col_start, row, col_end)
+        left_gap = margin_left if margin_left is not None else margin_x
+        right_gap = margin_right if margin_right is not None else margin_x
+        box_h = u(height_value)
+        if vertical == "top":
+            by0 = ry0 + u(22)
+        elif vertical == "bottom":
+            by0 = ry1 - box_h - u(22)
+        else:
+            by0 = ry0 + (row_h - box_h) // 2
+        box = (cx0 + u(left_gap), by0, cx1 - u(right_gap), by0 + box_h)
+        rounded_panel(draw, box, fill=fill, outline=accent, width=box_outline_width, radius=box_radius)
+        draw_fitted_text(draw, box, text, size=u(size), min_size=u(18))
+        return box
+
+    b_submit = flow_box(1, 1, "发货用户 / 商户\n提交物流订单", accent=mono_outline, fill=mono_fill, size=29, height_value=100, margin_left=28, margin_right=46)
+    b_create = flow_box(1, 2, "OrderService\n创建订单与明细", accent=mono_outline, fill=mono_fill, size=27, height_value=98, margin_left=30, margin_right=52)
+    b_assign = flow_box(2, 3, "LogisticsService\n分配起点仓 / 终点 Hub", accent=mono_outline, fill=mono_fill, size=25, height_value=86, vertical="top", margin_left=42, margin_right=72)
+    b_dispatch_preview = flow_box(2, 3, "写入调度池并进行\nK-Means 聚类预览", accent=mono_outline, fill=mono_fill, size=27, height_value=90, vertical="bottom", margin_left=54, margin_right=74, col_end=3)
+    b_confirm = flow_box(3, 1, "管理员确认\n调度批次", accent=mono_outline, fill=mono_fill, size=29, height_value=96, margin_left=78, margin_right=78)
+    b_trunk = flow_box(4, 3, "生成批次并发起\n干线运输", accent=mono_outline, fill=mono_fill, size=26, height_value=98, margin_left=78, margin_right=72)
+    b_activate = flow_box(5, 3, "到站后激活\n末端任务", accent=mono_outline, fill=mono_fill, size=27, height_value=96, margin_left=82, margin_right=70)
+    b_delivery = flow_box(5, 4, "DriverService 接收任务\n并执行末端配送", accent=mono_outline, fill=mono_fill, size=26, height_value=100, margin_left=78, margin_right=72, col_end=6)
+    b_done = flow_box(6, 1, "收件人签收\n闭环完成", accent=mono_outline, fill=mono_fill, size=29, height_value=96, margin_left=66, margin_right=54)
+
+    create_assign_end = anchor(b_assign, "left", 0.48)
+    create_assign_start = anchor_at_y(b_create, "right", create_assign_end[1])
+    assign_route_x = create_assign_end[0] - u(34)
+    assign_preview_start = anchor(b_assign, "right", 0.50)
+    preview_entry = anchor_at_x(b_dispatch_preview, "top", assign_preview_start[0] + u(74))
+    confirm_x = (b_confirm[0] + b_confirm[2]) // 2
+    preview_confirm_start = anchor_at_x(b_dispatch_preview, "top", confirm_x)
+    trunk_entry = anchor(b_trunk, "top")
+    trunk_turn_y = trunk_entry[1] - u(34)
+    delivery_entry = anchor_at_x(b_delivery, "top", anchor(b_activate, "bottom")[0])
+    activate_delivery_start = anchor_at_x(b_activate, "bottom", delivery_entry[0])
+    delivery_done_end = anchor(b_done, "bottom")
+    delivery_done_start = anchor_at_x(b_delivery, "top", delivery_done_end[0])
+
+    draw_arrow_path(draw, [anchor(b_submit, "bottom"), ((b_submit[0] + b_submit[2]) // 2, b_create[1] - u(16)), anchor(b_create, "top")], width=connector_width, arrow_length=u(18), arrow_half_width=u(8))
+    draw_arrow_path(
+        draw,
+        [
+            create_assign_start,
+            (assign_route_x, create_assign_start[1]),
+            (assign_route_x, create_assign_end[1]),
+            create_assign_end,
+        ],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+        label=("Feign同步", (assign_route_x + u(58), create_assign_start[1] - u(30))),
+    )
+    draw_arrow_path(
+        draw,
+        [assign_preview_start, (preview_entry[0], assign_preview_start[1]), preview_entry],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+    )
+    draw_arrow_path(
+        draw,
+        [preview_confirm_start, anchor(b_confirm, "bottom")],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+    )
+    draw_arrow_path(
+        draw,
+        [
+            anchor(b_confirm, "bottom"),
+            (confirm_x, trunk_turn_y),
+            (trunk_entry[0], trunk_turn_y),
+            trunk_entry,
+        ],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+    )
+    draw_arrow_path(draw, [anchor(b_trunk, "right", 0.5), anchor(b_activate, "left", 0.5)], width=connector_width, arrow_length=u(18), arrow_half_width=u(8))
+    draw_arrow_path(
+        draw,
+        [activate_delivery_start, delivery_entry],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+    )
+    draw_arrow_path(
+        draw,
+        [delivery_done_start, delivery_done_end],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+    )
+
+    save_figure(img, "core-business-flow.png", quality=96)
 
 
 def main() -> None:
     draw_architecture_overview()
     draw_frontend_architecture()
+    draw_core_business_flow()
     draw_er_diagram()
-    print("Redrew architecture-overview.png, frontend-architecture.png, er-diagram.png")
+    print("Redrew architecture-overview.png, frontend-architecture.png, core-business-flow.png, er-diagram.png")
 
 
 if __name__ == "__main__":
