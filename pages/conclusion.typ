@@ -1,9 +1,9 @@
-#import "../style/heading.typ": none-heading
+#import "../style/heading.typ": main-heading
 
 #let conclusion-page(
   body,
 ) = {
-  show: none-heading
+  show: main-heading
   heading(level: 1)[结论]
   body
   pagebreak(weak: true)
