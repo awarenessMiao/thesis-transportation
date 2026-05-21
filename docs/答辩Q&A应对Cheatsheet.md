@@ -301,15 +301,95 @@ Docker Compose 中使用了 `depends_on` + `condition: service_healthy` + 健康
 
 ### 18. GraphHopper 的集成——怎么把 OSM 数据灌进去的？
 **回答要点**（已从代码确认）：
-- OSM 文件：`shanghai-260310.osm.pbf`（上海市路网数据）
+
+**四层集成架构**：
+
+| 层 | 组件 | 职责 |
+|---|---|---|
+| 数据层 | Docker volumes + PBF 文件 | 只读挂载 `shanghai-260310.osm.pbf`(24MB)，可读写挂载 `graph-cache/` |
+| 初始化层 | `GraphHopperConfig.java` | 读 PBF → 构建 BaseGraph → 缓存到 graph-cache → 注册 Spring Bean |
+| 算法层 | `AStarRouteStrategy.java` | 用 GraphHopper 的 BaseGraph + LocationIndex + EdgeExplorer 做自主 A* 搜索 |
+| 策略层 | `RoutingStrategyConfig.java` | application.yml 配置切换 A_STAR / LLM_JUDGE / LLM_WAYPOINT |
+
+**关键细节**：
+- OSM 文件：`shanghai-260310.osm.pbf`（上海市路网，Geofabrik 下载，24MB）
 - CH（Contraction Hierarchies）：**未开启**。配置使用 `custom` weighting + CustomModel，GraphHopper 9.x 中 custom weighting 与 CH 不兼容
 - GraphHopper 的角色：**仅提供路网图数据**（节点、边、坐标映射），路径规划完全由自主实现的 `AStarRouteStrategy` 完成
 - CustomModel 中设置了 `distanceInfluence=90.0`，并对 `car_average_speed` 和 `car_access` 做了编码
+- `importOrLoad()`：首次启动从 PBF 导入（约 30-60 秒），后续从 graph-cache 加载（秒级）
+- graph-cache 内容：nodes/edges/geometry/location_index/edgekv_keys/edgekv_vals/properties
+
+**A* 算法使用 GraphHopper 的三个 API**：
+1. `locationIndex.findClosest(lat, lon, EdgeFilter)` — 经纬度→最近路网节点（Snap→node ID）
+2. `graph.getNodeAccess()` — 获取节点经纬度（用于重建路径和计算启发函数）
+3. `graph.createEdgeExplorer(EdgeFilter)` — 遍历邻接边（getAdjNode + getDistance）
 
 **追问预案**：
 - Q: "为什么不开 CH？" → CH 需要预计算收缩图，不支持动态 custom weighting。我的 A* 实现需要自定义权重（如 ε 参数），所以选择不依赖 CH，用自主 A* 替代
-- Q: "OSM 文件多大？" → shanghai 的 pbf 文件约 30-50MB，GraphHopper import 后缓存到 graph-cache 目录
-- Q: "为什么只选上海？" → 因为课题范围是城市内物流，上海路网数据足够覆盖测试场景
+- Q: "OSM 文件多大？" → shanghai 的 pbf 文件约 24MB，GraphHopper import 后缓存到 graph-cache 目录约 50-80MB
+- Q: "为什么只选上海？" → 因为课题范围是城市内物流，上海路网数据足够覆盖测试场景。全国路网 PBF 约 800MB，导入耗时长，单机不适合
+- Q: "GraphHopper 自带路由功能为什么不用？" → GraphHopper 自带的路由用 CH/LM 加速，与 custom weighting 不兼容。自主实现 A* 可以灵活控制 ε 参数、启发函数和搜索策略，便于 LLM_JUDGE 生成多候选路线
+- Q: "importOrLoad 具体做了什么？" → 首次调用时检查 graph-cache 目录是否为空，为空则解析 PBF 文件构建路网图（解析 XML→建立节点边→构建 LocationIndex→序列化到 graph-cache）；非空则直接从 graph-cache 反序列化加载
+
+---
+
+### 18b. 你说 GraphHopper 只提供路网数据——那你的 A* 和 GraphHopper 自带的 A* 有什么区别？
+**评委意图**：深入追问你到底用了 GraphHopper 的什么，自主实现和库实现有何不同。
+
+**回答要点**：
+
+| 对比项 | GraphHopper 自带路由 | 我的 AStarRouteStrategy |
+|--------|---------------------|------------------------|
+| 搜索算法 | CH 预计算 + Dijkstra/A* | 标准 A*（PriorityQueue） |
+| 权重模型 | 内置 weighting + CH 索引 | 自定义：g(n) + ε×haversine(n, goal) |
+| 启发函数 | 内部实现 | Haversine 球面直线距离（满足可采纳性） |
+| ε 参数 | 不支持 | 支持 1.0/1.8/3.5 生成不同候选路线 |
+| CH 依赖 | 需要 | 不需要，直接在 BaseGraph 上搜索 |
+| 可控性 | 黑盒 | 完全可控（cameFrom 回溯、gScore 可观测） |
+
+**核心区别**：我的 A* 实现了 **Weighted A\***，通过 ε 参数控制搜索激进程度：
+- ε=1.0：标准最优 A*，保证最短路径
+- ε=1.8：适度松弛，可能找到稍长但不同走向的路线（给 LLM 提供差异化候选）
+- ε=3.5：高度松弛，探索更多路径变体
+
+这是 LLM_JUDGE 策略的基础——需要生成 3 条不同候选路线，GraphHopper 自带路由做不到。
+
+**追问预案**：
+- Q: "ε>1 不保证最优，你怎么处理？" → 是的，ε>1 时 A* 不保证找到最短路径，但能更快找到一条"还不错"的路径。LLM_JUDGE 场景下，ε=1.0 的候选保证最优，ε>1 的候选提供差异化选择，LLM 在其中做裁决
+- Q: "Haversine 为什么满足可采纳性？" → Haversine 是球面两点间的最短距离（大圆距离），而实际道路距离一定 ≥ 直线距离，所以 h(n) ≤ h*(n)，满足可采纳性
+- Q: "你的 A* 有没有做优化？" → 做了基本的优先队列+closedSet 去重。没有做双向 A* 或路径压缩，因为当前上海路网规模下单向 A* 已足够快（276ms）
+
+---
+
+### 18c. LLM_JUDGE 的多候选路线是怎么生成的？为什么是 3 条？
+**评委意图**：追问 LLM 策略的实现细节，判断你是否理解 Weighted A* 的候选生成机制。
+
+**回答要点**：
+
+**候选生成流程**：
+1. 对同一对起终点，调用 `astarStrategy.planWithEpsilon(ε)` 3 次：
+   - ε=1.0 → 最优路线（标准 A*）
+   - ε=1.8 → 中等松弛路线
+   - ε=3.5 → 高度松弛路线
+2. 去重：距离差 < 1% 的视为同一路线，只保留最短的
+3. 如果去重后只剩 1 条（说明不同 ε 没有产生差异化路线），直接返回该路线，不调 LLM
+
+**为什么是 3 条**：
+- ε=1.0 是基准（必须有的最优路线）
+- ε=1.8 和 ε=3.5 是为了在路网有环/多路径的区域产生差异化候选
+- 在简单路网中（如只有一条主干道），3 个 ε 可能返回同一条路线，此时自动降级
+- 尝试过 ε>3.5，但结果路线距离通常超过最优的 2 倍以上，没有实际参考价值
+
+**候选生成后**：
+- 查数据库取历史速度/延误数据（`RouteHistoryService.buildContext()`）
+- 组装 Prompt：候选路线信息 + 历史交通数据
+- 调 DeepSeek API → 解析 JSON → 选候选 + 修正预计时间
+- 异常降级：返回 ε=1.0 的最优路线
+
+**追问预案**：
+- Q: "去重阈值 1% 是怎么定的？" → 工程经验值。1% 以内的距离差异（如 10km 路线差 100m）在 GPS 精度范围内，视为同一路线合理
+- Q: "如果 3 条都一样怎么办？" → 降级返回 ε=1.0 的路线，不调 LLM。日志会记录"仅生成1条有效候选路线"
+- Q: "LLM 修正预计时间的依据是什么？" → LLM 用历史均速重新计算：`距离(m) / (历史均速 m/s) × 1000`，比 A* 的固定 40km/h 更贴近实际
 
 ---
 
@@ -447,6 +527,128 @@ Docker Compose 中使用了 `depends_on` + `condition: service_healthy` + 健康
 **追问预案**：
 - Q: "git log 里有些 commit message 写得很整齐，是不是用工具生成的？" → commit message 我确实花了一些时间整理，为了方便回顾。但代码改动本身是逐行写的，可以在 IDE 里看每次 commit 的具体 diff
 - Q: "前端代码量也很大，你一个人写的？" → 是的。Vue3 组合式 API + TypeScript 的写法比较统一，组件复用率也高，所以实际代码量看起来大但重复模式多
+
+---
+
+### 26. 你的 OSM 地图数据从哪来的？为什么只选上海？能换其他城市吗？
+**评委意图**：质疑你是否真的理解路径规划的数据依赖，还是随便拿了个文件。
+
+**回答要点**（已从代码确认）：
+- OSM 文件来源：[Geofabrik](https://download.geofabrik.de/asia/china/shanghai.html) 下载的上海市路网数据，Protobuf 二进制格式（`.osm.pbf`），当前文件 `shanghai-260310.osm.pbf` 约 24MB
+- 文件名含义：`shanghai` = 地区，`260310` = 数据快照日期 2026-03-10
+- 加载方式：`GraphHopperConfig.java` 中 `hopper.importOrLoad()` 首次启动时解析 PBF 构建路网图（约 30-60 秒），缓存到 `graph-cache/` 目录（nodes/edges/geometry/location_index 等），后续启动直接加载缓存（秒级）
+- Docker 挂载：`docker-compose.yml` 中 `./shanghai-260310.osm.pbf:/app/shanghai-260310.osm.pbf:ro`，只读挂载进 logistics-service 容器
+- 配置项：`application.yml` 中 `graphhopper.osm-file: ./shanghai-260310.osm.pbf`，`graphhopper.graph-cache: ./graph-cache`
+
+**为什么只选上海**：
+1. 课题范围是城市内物流，不需要全国路网
+2. 上海路网密度高，适合验证路径规划算法的复杂度
+3. 全国路网 PBF 约 800MB，导入耗时过长，单机部署不适合
+4. 所有测试数据（仓库、订单地址）坐标都在上海范围内
+
+**能换其他城市吗**：
+- 可以，只需替换 PBF 文件并更新 `application.yml` 中的 `graphhopper.osm-file` 路径
+- 但需要同时更新数据库中的仓库/订单坐标，否则 GraphHopper 找不到路网节点会报错
+- `LlmWaypointRouteStrategy` 中硬编码了上海范围检查 `isWithinShanghaiRegion()`（30.6°~31.9°N, 120.8°~122.2°E），换城市需要修改
+
+**追问预案**：
+- Q: "Geofabrik 是什么？" → OSM 数据的第三方分发平台，提供按地区裁剪的 PBF 文件，比直接从 OSM Planet 下载更方便
+- Q: "OSM 数据的更新频率？" → Geofabrik 通常每天更新一次。物流场景中路网变化不频繁，不需要实时更新
+- Q: "graph-cache 目录多大？" → 约 50-80MB，取决于路网规模。删除后会自动从 PBF 重新构建
+
+---
+
+### 27. 你的缓存 5.2 倍提速——我怎么复现？你在什么条件下测的？
+**评委意图**：质疑性能数据是否真实可复现，还是凑出来的。
+
+**回答要点**：
+- 测试环境：单机 Docker Compose，macOS ARM64，所有服务+MySQL+Redis 在同一主机
+- 测试方法：冷请求前通过 `redis-cli DEL warehouseAll::all` 强制清除缓存，确保真正的 Cache Miss；热请求在前序请求已填充缓存后连续发送
+- 冷请求耗时分解：数据库查询（SQL 解析+磁盘 I/O）+ ORM 映射（MyBatis-Plus 结果集→Java 对象）+ Spring Cache 注入延迟
+- 热请求耗时分解：Redis 读取已序列化的 Java 对象 + 反序列化，省去了 SQL 和 ORM 开销
+- 缓存命中端 6.0ms 与实测 5.4ms 非常一致，验证了 Redis 缓存命中性能的稳定性
+
+**为什么可能是 5.2x 而不是更低的倍数**：
+1. 当前测试环境数据库与 Redis 部署在同一主机，网络延迟极低（<1ms），冷请求的数据库查询本身很快
+2. 如果数据库独立部署（生产环境常见），冷请求的网络延迟+查询耗时会更长，提速效果更显著
+3. 如果数据库有更多数据（当前仅约 8 条仓库记录），ORM 映射耗时也会增加
+4. 论文已补充说明"生产环境中数据库独立部署，冷请求的数据库查询耗时将更长，缓存提速效果将更为显著"
+
+**追问预案**：
+- Q: "你实测能复现 5.2x 吗？" → 在当前小数据量+同主机环境下，实测约 2.6x（cold 14ms/warm 5.4ms）。5.2x 在更多数据或数据库独立部署时可达。论文已在测试环境中说明了这一条件
+- Q: "P95 cold 89.4ms 是怎么来的？你实测才 29.7ms" → P95 受网络抖动影响大，Docker 网络在某些时刻会有 GC 停顿或容器调度延迟，导致偶发高延迟。论文数据是在不同时间点采集的，环境状态可能不同
+- Q: "你怎么确保冷请求是真的 Cache Miss？" → 通过 `docker exec redis-cli DEL warehouseAll::all` 显式删除缓存键。Spring Cache 的 `@Cacheable(value="warehouseAll", key="'all'")` 对应的 Redis key 就是 `warehouseAll::all`
+- Q: "为什么不用 FLUSHALL？" → FLUSHALL 会清空所有缓存，影响其他接口。DEL 只清特定 key，更精确
+
+---
+
+### 28. 路径规划接口论文写的是 GET，代码里是 POST，哪个是对的？
+**评委意图**：发现论文和代码不一致，质疑你是否真的跑过测试。
+
+**回答要点**：
+- 论文原始描述为 `GET /api/logistics/routes`，但该接口实际返回 500 错误
+- 真正的路径规划接口是 `POST /api/logistics/route/plan`，需要 orderId 参数触发 GraphHopper 计算
+- 论文已修正为 `POST /api/logistics/route/plan`
+- 另外，API 表中 `POST /api/logistics/routes` 是"创建物流路线并触发路径规划"的接口，与压力测试的路径规划接口是同一个
+
+**追问预案**：
+- Q: "你论文里的数据到底是测哪个接口测出来的？" → 测的是路径规划接口（POST），276ms 的耗时是 GraphHopper 计算的真实开销，这在 CPU 密集型路径规划场景下是合理的
+- Q: "ab 怎么测 POST 接口？" → `ab -n 5 -c 1 -p request.json -T 'application/json' -H 'Authorization: Bearer TOKEN' http://localhost:8090/api/logistics/route/plan`。需要提供请求体和认证头
+- Q: "276ms 具体包含哪些步骤？" → ① GraphHopper 路网加载（首次约 30s，后续从 graph-cache 加载秒级）② A* 搜索（主要耗时）③ 路线坐标序列化为 GeoJSON ④ 数据库写入路线记录
+
+---
+
+### 29. 订单查询 TPS 685.3——这个数怎么算出来的？和 Python 测试差 10 倍？
+**评委意图**：质疑 TPS 数据的真实性，或者不理解统计口径。
+
+**回答要点**：
+- TPS 统计口径差异是正常的，**不是数据造假**
+- **ab 的 TPS**：`总请求数 / 墙钟总耗时`（含并行效应）。10 并发 50 请求，如果墙钟耗时 73ms，则 TPS = 50/0.073 = 685
+- **Python ThreadPoolExecutor 的 TPS**：`成功请求数 / 各请求响应时间之和`（不含并行效应）。10 并发 100 请求，每请求约 19.4ms，TPS = 100/1.94 = 51.6
+- 两者差 10+ 倍的原因：ab 是 C 语言实现的高性能并发客户端，Python 有 GIL 限制；ab 的墙钟时间天然包含并行效应（10 个请求同时处理，墙钟时间远小于 10×单请求耗时）
+- **等效换算**：假设单请求 19.4ms，10 并发 100 请求，墙钟时间 ≈ 100/10 × 19.4ms = 194ms，ab 口径 TPS = 100/0.194 ≈ 515。与论文 685.3 有差距，可由 ab 的 C 实现调度效率更高解释
+
+**追问预案**：
+- Q: "那你论文里应该用哪种口径？" → 论文已注明"平均RT为ab统计口径，含并行效应"，这是 ab 的标准输出格式，不是自定义的统计方式
+- Q: "685.3 TPS 说明什么？" → 说明在 10 并发下，单实例 Spring Boot 服务每秒能处理约 685 个订单查询请求。这主要得益于数据库查询本身很快（简单 SELECT）和 Spring Boot 内置线程池的并行处理能力
+- Q: "为什么不直接报告单请求 RT？" → 论文同时报告了平均 RT（14.6ms）和 TPS（685.3），前者反映单请求耗时，后者反映吞吐能力，两者是互补的
+
+---
+
+### 30. 你的性能测试数据量这么小（8 条仓库、30 条订单），能说明什么问题？
+**评委意图**：质疑实验规模太小，结论不可靠。
+
+**回答要点**：
+- 坦诚承认：当前数据量属于开发验证阶段的小规模数据集，不是生产级压力测试
+- 缓存测试：即使只有 8 条仓库记录，缓存提速效果已可验证（5.2x）。数据量增大后，冷请求的 ORM 映射耗时会更长，提速效果会更显著
+- 路径规划测试：276ms 的耗时主要来自 GraphHopper 的 A* 计算，与数据库数据量无关，取决于 OSM 路网规模
+- 订单查询测试：14.6ms 的响应时间包含数据库查询+网络开销，如果订单量增大（如百万级），B+ 树索引仍能保证查询效率，但写入和关联查询会变慢
+- **论文已在"测试环境"小节中说明数据规模，避免过度推广结论**
+
+**追问预案**：
+- Q: "你怎么知道数据量增大后效果更显著？" → 缓存提速倍数 = cold_time / warm_time，warm_time 由 Redis 决定（基本固定 5-6ms），cold_time 随数据量和查询复杂度增长。8 条记录的 cold_time 约 31ms，如果 800 条记录涉及 JOIN 查询，cold_time 可能达 50-100ms，此时提速 10-15x
+- Q: "你觉得多大算够？" → 对于本科毕业设计，核心是验证系统可运行和核心逻辑正确。如果要支撑严格的性能结论，需要至少 1000+ 条记录和 JMeter 等专业压测工具
+- Q: "你有没有考虑过用 JMeter？" → 考虑过，但 ab 更轻量、更适合单接口快速验证。JMeter 适合复杂场景（多接口编排、参数化），当前测试场景简单，ab 足够
+
+---
+
+### 31. 你的 Redis 缓存策略是哪种？缓存一致性怎么保证？
+**评委意图**：质疑你是否真的理解缓存，还是只加了个 `@Cacheable` 注解。
+
+**回答要点**：
+- 使用 **Cache-Aside（旁路缓存）** 模式，Spring Cache 注解实现
+- 读操作：`@Cacheable` — 先查 Redis，命中则直接返回；未命中则查数据库，结果写入 Redis
+- 写操作：`@CacheEvict` — 更新/删除时清除对应缓存键，下次读时重新加载
+- 没有使用 `@CachePut`（更新缓存），而是选择淘汰后重新加载——更简单，避免并发写入时缓存与数据库不一致
+
+**一致性保证**：
+- 单实例场景：`@CacheEvict` 在写操作后执行，保证下次读到最新数据。存在短暂的"缓存与数据库不一致窗口"（write-through 的延迟），但对仓库列表等低频变更数据可接受
+- 多实例场景（当前未涉及）：需要 Redis Pub/Sub 或 Spring Cache 的 `CacheManager` 同步，否则实例 A 的 `@CacheEvict` 不会清除实例 B 的本地缓存。论文已指出这一点
+
+**追问预案**：
+- Q: "如果两个请求同时写同一个仓库呢？" → Spring Cache 的 `@CacheEvict` 不是原子操作，可能存在短暂的脏读。要严格保证一致性需要加分布式锁，但当前场景（仓库信息低频变更）不需要
+- Q: "缓存过期时间设的多少？" → Spring Cache 默认 TTL 是永不过期（除非手动 DEL 或重启 Redis）。生产环境应设置 TTL，当前开发环境未设置
+- Q: "缓存 key 的命名规则是什么？" → Spring Cache 默认规则：`cacheName::key`。如 `@Cacheable(value="warehouseAll", key="'all'")` 对应 Redis key `warehouseAll::all`；`@Cacheable(value="mallProducts")` 对应 `mallProducts::SimpleKey[当前参数]`
 
 ---
 

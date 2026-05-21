@@ -17,6 +17,27 @@
     it.body
     v(15pt)
   }
+  show heading.where(level: 2): it => {
+    set text(
+      font: ziti.heiti.get(),
+      weight: "regular",
+      size: zihao.sihao,
+    )
+    set par(first-line-indent: 0em, spacing: 0em)
+    v(0.8em)
+    it.body
+    v(0.8em)
+  }
+  show heading.where(level: 3): it => {
+    set text(
+      font: ziti.heiti.get(),
+      weight: "regular",
+      size: zihao.xiaosi,
+    )
+    set par(first-line-indent: 0em, spacing: 0em)
+    v(0.5em)
+    it.body
+  }
   pagebreak(weak: true)
   body
 }
