@@ -4,11 +4,35 @@
   body,
 ) = {
   show ref: it => {
-    if it.element != none and it.element.func() == figure and it.element.kind == "subimage_" {
-      let q = query(figure.where(outlined: true).before(it.target)).last()
-      ref(q.label)
+    if it.element != none and it.element.func() == figure {
+      let target-name = str(it.target)
+      let already-prefixed = (
+        target-name.starts-with("fig:") or
+        target-name.starts-with("img:") or
+        target-name.starts-with("tbl:") or
+        target-name.starts-with("algo:") or
+        target-name.starts-with("lst:")
+      )
+      if it.element.kind == "subimage_" {
+        let q = query(figure.where(outlined: true).before(it.target)).last()
+        ref(q.label)
+      } else if not already-prefixed {
+        let prefix = if it.element.kind == "table" {
+          "tbl:"
+        } else if it.element.kind == "algorithm" {
+          "algo:"
+        } else if it.element.kind == "image" {
+          "img:"
+        } else {
+          "fig:"
+        }
+        ref(label(prefix + target-name))
+      } else {
+        it
+      }
+    } else {
+      it
     }
-    it
   }
   body
 }
