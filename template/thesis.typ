@@ -1192,7 +1192,7 @@ MCMF全国运力规划的关键参数配置如下。
 
 === 发货用户端运行结果
 
-发货用户端覆盖发起寄件与订单追踪等核心功能。图@create-order-pickup 展示了发起寄件页面，发货用户可选择取件地址、联系人信息并关联承运物，系统自动校验地址有效性。图@create-order-confirm 展示了下单确认页面，汇总收发货地址、承运物信息与费用预估，确认后生成订单并触发后续履约流程。图@order-detail 展示了订单详情与物流轨迹页面，以时间线形式呈现订单从创建、分配中转站、干线运输到末端配送各节点的状态流转。
+发货用户端覆盖发起寄件与订单追踪等核心功能。图@create-order-pickup 展示了发起寄件页面，发货用户可选择取件地址、联系人信息并关联承运物，系统自动校验地址有效性。图@create-order-confirm 展示了下单确认页面，汇总收发货地址、承运物信息与费用预估，确认后生成订单并触发后续履约流程。
 
 #imagex(
   image("figures/create-order-pickup.png", width: 75%),
@@ -1206,10 +1206,18 @@ MCMF全国运力规划的关键参数配置如下。
   label-name: "create-order-confirm",
 )
 
+订单生成后，用户可在订单详情中查看全程物流路线与阶段性履约节点。图@customer-order-track-map 展示了订单追踪地图，系统在同一地图中叠加已走路径、预计路线、中转站与当前车辆位置；图@customer-order-track-timeline 展示了物流节点时间线，可区分跨城干线运输、城市内转运和末端配送等环节，从而帮助用户理解订单当前所处的履约阶段。
+
 #imagex(
-  image("figures/order-detail.png", width: 75%),
-  caption: [订单详情与物流轨迹页面],
-  label-name: "order-detail",
+  image("figures/customer_order_detail_1.png", width: 80%),
+  caption: [发货用户订单追踪地图],
+  label-name: "customer-order-track-map",
+)
+
+#imagex(
+  image("figures/customer_order_detail_2.png", width: 80%),
+  caption: [发货用户物流节点时间线],
+  label-name: "customer-order-track-timeline",
 )
 
 === 商户端运行结果
@@ -1232,34 +1240,84 @@ MCMF全国运力规划的关键参数配置如下。
 
 === 运输员端运行结果
 
-运输员端是物流计划落地执行的直接承载端，用于接收配送任务、执行导航与上报送达状态。图@driver-tasks 展示了运输员待处理任务列表，按任务来源（末端配送与直送）分区展示可领取的配送任务，运输员可一键接单并开始执行。接单后，系统基于 GraphHopper 真实路网规划配送路线，在地图页面上渲染途经停靠点与实时位置，运输员按停靠顺序逐单配送并上报送达状态。图@driver-map 展示了运输员配送导航页面，地图上以 Leaflet 渲染发货地（上海华东仓库）至收货地（陆家嘴环路）的真实路网路线，左侧面板显示物流单号、路线状态与途经节点时间线。
+运输员端是物流计划落地执行的直接承载端，用于接收配送任务、执行导航与上报送达状态。图@driver-preassigned-missions 展示了管理员已生成但尚未到达执行条件的预调度任务，干线任务到达分拨中心后会自动转入运输员的我的任务列表。图@driver-active-missions 展示了运输员当前任务，系统区分干线运输、末端配送与已送达记录，并提供开始运输、到达中转站等状态操作。
 
 #imagex(
-  image("figures/driver-tasks.png", width: 80%),
-  caption: [运输员待处理任务列表],
-  label-name: "driver-tasks",
+  image("figures/driver_mission_2.png", width: 85%),
+  caption: [运输员预调度任务列表],
+  label-name: "driver-preassigned-missions",
 )
 
 #imagex(
-  image("figures/driver-map.png", width: 80%),
-  caption: [运输员配送导航与路线地图],
-  label-name: "driver-map",
+  image("figures/driver_mission_1.png", width: 85%),
+  caption: [运输员当前任务列表],
+  label-name: "driver-active-missions",
+)
+
+接单后，系统基于 GraphHopper 真实路网规划配送路线，在地图页面上渲染途经停靠点与实时位置，运输员按停靠顺序逐单配送并上报送达状态。图@driver-route-guide 展示了路线指引页面，运输员可查看物流单号、路线状态、出发地与预计到达时间；图@driver-last-mile-confirm 展示了末端多停靠点配送确认页面，只有逐站完成确认后，末端配送单才会进入完成状态。
+
+#imagex(
+  image("figures/driver_guide.png", width: 90%),
+  caption: [运输员配送路线指引页面],
+  label-name: "driver-route-guide",
+)
+
+#imagex(
+  image("figures/driver_last_mission_confirm.png", width: 70%),
+  caption: [末端配送多停靠点确认页面],
+  label-name: "driver-last-mile-confirm",
 )
 
 === 管理员端运行结果
 
-管理员端集中体现系统的全局管理、智能调度与网络规划能力。在末端调度预览页面，管理员触发调度后，系统对调度池中的订单执行 K-Means 聚类与 TSP 排序，地图上以不同颜色渲染聚类结果，同时展示 LLM 对各聚类的分析建议，确认后执行调度创建批次。图@kmeans-dispatch 展示了末端调度预览页面，系统将25单待调度订单划分为5个配送批次，LLM 分析指出批次1因中转站距客户23.51 km且仅2单而建议直达，其余批次经分拨中心配送。图@mcmf-flow-plan 展示了全国运力规划结果，MCMF算法在Hub-and-Spoke网络上求解最小费用最大流，预估运力分配520件、总费用¥4430.8。
+管理员端集中体现系统的全局管理、智能调度与网络规划能力。在城市末端调度页面，管理员选择待调度订单并生成调度方案，系统给出建议批次数、划分区域数和配送策略说明。图@admin-incity-dispatch-overview 展示了末端调度方案预览，16 单待调度订单被划分为 4 个批次，系统综合距离、订单量与中转站位置判断是否经分拨中心配送。调度方案确认后，管理员在司机分配页面为干线运输和末端路线组指定司机，图@admin-driver-assign 展示了干线司机与末端司机的分配结果。
 
 #imagex(
-  image("figures/kmeans-dispatch-preview.png", width: 90%),
-  caption: [末端调度预览——K-Means聚类与LLM分析],
-  label-name: "kmeans-dispatch",
+  image("figures/incity_result_overview.png", width: 90%),
+  caption: [管理员城市末端调度方案预览],
+  label-name: "admin-incity-dispatch-overview",
 )
 
 #imagex(
-  image("figures/mcmf-flow-plan.png", width: 90%),
-  caption: [全国运力规划——MCMF流量分配结果],
-  label-name: "mcmf-flow-plan",
+  image("figures/driver_assign.png", width: 90%),
+  caption: [管理员干线与末端司机分配页面],
+  label-name: "admin-driver-assign",
+)
+
+批次执行后，管理员可在批次详情中查看干线段、末端配送组和全批次路线。图@admin-batch-route-total 展示了同一批次的干线与末端路线总览，蓝色线路表示干线段，绿色线路表示末端配送段；图@admin-batch-route-last 展示了末端配送组的单独路线，便于检查停靠顺序与司机执行范围。
+
+#imagex(
+  image("figures/incity_batch_result_totalmap.png", width: 90%),
+  caption: [管理员批次路线总览],
+  label-name: "admin-batch-route-total",
+)
+
+#imagex(
+  image("figures/incity_batch_result_lastmap.png", width: 85%),
+  caption: [管理员末端配送组路线详情],
+  label-name: "admin-batch-route-last",
+)
+
+除城市内调度外，管理员端还提供全国 Hub-and-Spoke 网络的运力规划结果展示。MCMF 执行前，系统先调用 LLM 对候选物流边进行费用校准，将线路负载、天气、拥堵和历史成本等因素转化为费用倍率，为后续最小费用最大流求解提供更贴近业务状态的边权输入。图@admin-mcmf-llm-cost-calibration 展示了物流边费用校准结果，不同线路根据运行条件被上调或下调费用倍率。
+
+#imagex(
+  image("figures/MCMF_LLM_result_1.png", width: 90%),
+  caption: [管理员 MCMF 执行前物流边费用校准结果],
+  label-name: "admin-mcmf-llm-cost-calibration",
+)
+
+完成费用校准后，系统执行 MCMF 算法求解全国网络中的运力分配方案。图@admin-mcmf-result-map 展示了 MCMF 算法在全国物流网络中的流量分配，地图同时标识有运载批次 Hub、空闲 Hub、待发车批次和运输中线路。规划生成后，系统再次调用 LLM 对结果进行解释性分析，图@admin-mcmf-llm-analysis 围绕瓶颈负载、线路成本异常、枢纽利用率和可优化路径给出建议，辅助管理员判断是否需要调整费率、合并线路或补充中转能力。
+
+#imagex(
+  image("figures/MCMF_result_map.png", width: 90%),
+  caption: [管理员全国物流网络 MCMF 规划结果],
+  label-name: "admin-mcmf-result-map",
+)
+
+#imagex(
+  image("figures/MCMF_LLM_result_2.png", width: 90%),
+  caption: [管理员 MCMF 规划结果 LLM 分析建议],
+  label-name: "admin-mcmf-llm-analysis",
 )
 
 == 本章小结
