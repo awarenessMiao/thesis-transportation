@@ -1053,6 +1053,108 @@ MCMF全国运力规划的关键参数配置如下。
   label-name: "mcmf-params",
 )
 
+=== LLM 辅助决策实现
+
+本文将大语言模型（Large Language Model, LLM）定位为物流规划服务中的辅助决策组件，而不是替代A\*、K-Means或MCMF等确定性算法。系统的基本流程是：先由确定性算法生成路线、聚类批次或网络流结果，再将结果摘要、业务上下文和约束条件组织为提示词，调用DeepSeek Chat接口生成结构化建议。后端要求模型返回JSON对象，并在解析失败、字段缺失或调用超时时进入规则降级分支，以保证核心物流流程不依赖LLM的稳定性。
+
+系统中LLM辅助决策的主要应用场景如表 @llm-usage-table 所示。表中从输入数据、模型输出和降级策略三个方面对各场景进行归纳，以说明LLM在物流规划流程中的具体作用。
+
+#tablex(
+  [末端调度], [K-Means簇、仓库位置、最近Hub、目的地摘要], [是否走Hub模式、批次数、优先级和理由], [失败后按距离与订单数规则判断],
+  [Hub选择], [候选Hub距离、今日负载、历史交通状态], [推荐Hub及选择理由], [选择距离最近Hub],
+  [MCMF校准], [干线边、基准费用、天气、历史负载], [每条边费用倍率与原因], [倍率置为1.0],
+  [MCMF解读], [边流量、容量、负载率、成本占比], [瓶颈、成本异常和运营建议], [返回空建议],
+  [路径规划], [A\*候选路线、历史交通特征], [候选路线或绕行路点建议], [回退标准A\*],
+  header: ([场景], [输入摘要], [LLM输出], [降级策略]),
+  columns: (0.9fr, 2fr, 1.6fr, 1.5fr),
+  caption: [LLM辅助决策调用场景表],
+  label-name: "llm-usage-table",
+)
+
+// 此处可插入图4-x：LLM辅助决策统一调用流程图。
+
+==== 末端调度辅助决策
+
+在末端调度中，K-Means负责根据收货坐标将调度池订单划分为若干配送簇，并通过贪心排序生成簇内停靠顺序。LLM介入的位置在聚类完成之后，主要解决"某一簇应直接配送，还是先进入Hub再做末端派送"这一管理判断。系统会为每个簇补充最近Hub、仓库到簇中心距离、Hub到簇中心距离和部分地址摘要，然后要求模型判断是否采用Hub-and-Spoke模式，并返回批次数、紧急程度、推荐Hub及说明。
+
+末端调度提示词由三部分组成：第一部分设定模型角色为熟悉"仓库→中转站→客户"模式的物流调度专家；第二部分给出判断原则，例如远距离且订单集中时倾向Hub模式，近距离或订单极少时倾向直送；第三部分要求返回固定JSON字段，包括`suggestedBatchCount`、`strategy`、`reason`、`estimatedSavingKm`和`batchSuggestions`。@dispatch-llm-prompt 给出了该提示词在论文中的抽象表示。
+
+#algox(
+  caption: [末端调度LLM提示词结构],
+  label-name: "dispatch-llm-prompt",
+)[
+  SystemPrompt:\
+  #h(2em)设定角色为熟悉Hub-and-Spoke模式的物流调度专家；\
+  #h(2em)说明中转模式适用条件：目的地较远、订单集中、附近存在合适Hub；\
+  #h(2em)说明直送模式适用条件：订单数量较少或目的地距仓库较近；\
+  #h(2em)要求严格返回JSON对象，不输出额外解释。\
+  \
+  UserPrompt:\
+  #h(2em)输入发货仓库坐标、总订单数和K-Means聚类批次数；\
+  #h(2em)for each cluster in clusters:\
+  #h(4em)输入clusterId、订单数、簇中心坐标和仓库到簇距离；\
+  #h(4em)输入最近Hub名称、Hub地址、Hub到簇距离和目的地摘要；\
+  #h(2em)要求返回整体策略、预计节省里程和每个簇的调度建议。\
+  \
+  ExpectedOutput:\
+  #h(2em)suggestedBatchCount, strategy, reason, estimatedSavingKm, batchSuggestions
+]
+
+模型返回结果只作为管理员调度预览的辅助信息，不直接绕过人工确认。若LLM不可用，系统按规则降级：当仓库到目的地簇距离较远、订单数达到阈值且存在较近Hub时推荐Hub模式，否则推荐直送。系统还在调度池加载时使用LLM识别订单备注中的"急送、加急、今天必须到"等语义；该功能失败时仅返回空紧急列表，不影响普通订单调度。
+
+在批次创建阶段，系统还调用LLM进行Hub选择。后端先选出距离订单群中心最近的若干候选Hub，再补充今日已处理批次数和历史交通状态。模型只能在候选Hub范围内返回`selectedIndex`和选择理由，不能生成新的Hub；若返回索引越界或调用失败，系统选择距离最近的Hub作为降级结果。
+
+==== 全国运力规划辅助决策
+
+全国运力规划中的LLM调用分为两个阶段。第一阶段发生在MCMF求解前，用于干线边费用倍率校准。系统将活跃HubLink、基准运输费用、天气信息和历史负载摘要输入模型，要求模型为每条边输出`multiplier`。后端将边费用更新为"基准费用 × multiplier"后再执行多商品MCMF求解。为了避免模型输出破坏网络流约束，系统只接受已有`linkId`的倍率，且将倍率限制在$[0.7, 2.0]$区间内；若某条边缺失或模型调用失败，则该边使用倍率1.0。
+
+费用校准提示词的核心要求包括：模型身份为物流调度助手；任务仅限于为每条干线链路输出费用倍率；倍率含义限定为对基准费用的上调或下调；输出必须覆盖全部`linkId`，并严格返回`calibrations`数组。@mcmf-calibration-prompt 给出了该提示词结构。
+
+#algox(
+  caption: [MCMF费用校准LLM提示词结构],
+  label-name: "mcmf-calibration-prompt",
+)[
+  SystemPrompt:\
+  #h(2em)设定角色为物流调度助手；\
+  #h(2em)任务限定为：为每条干线链路输出费用倍率multiplier；\
+  #h(2em)定义实际费用 = 基准费用 × multiplier；\
+  #h(2em)约束multiplier取值范围为$[0.7, 2.0]$；\
+  #h(2em)要求输出覆盖全部linkId的calibrations数组。\
+  \
+  UserPrompt:\
+  #h(2em)输入决策日期、天气信息和历史边流量摘要；\
+  #h(2em)for each link in hubLinks:\
+  #h(4em)输入linkId、起点Hub、终点Hub、运输方式和基准费用；\
+  #h(2em)要求模型为每条链路返回费用倍率和简短原因。\
+  \
+  ExpectedOutput:\
+  #h(2em)calibrations = [(linkId, multiplier, reason), ...]
+]
+
+第二阶段发生在MCMF求解后，用于运营解读。此时流量分配、总成本和各边负载率已由算法确定，LLM只负责将这些数字转化为管理者可读的瓶颈分析、成本异常提示和调整建议。提示词中特别强调"数字已由算法算好"，要求模型不要重新求解网络流，而是从枢纽集中度、走廊压力、成本结构和次日需求波动风险等角度进行解释。结果字段包括`bottleneckAnalysis`、`costAnomalyWarning`、`suggestions`和`summary`，最终持久化到`flow_plan.llm_advice`并展示给管理员。
+
+#algox(
+  caption: [MCMF结果解读LLM提示词结构],
+  label-name: "mcmf-advice-prompt",
+)[
+  SystemPrompt:\
+  #h(2em)设定角色为全国干线网络运营顾问；\
+  #h(2em)强调输入数字已由MCMF算法求得，模型不得重新求解网络流；\
+  #h(2em)要求从瓶颈走廊、枢纽集中度、成本异常和潜在风险角度解读；\
+  #h(2em)要求返回JSON对象，用于管理员端展示。\
+  \
+  UserPrompt:\
+  #h(2em)输入总流量、总成本、有流量边数量和最高负载率；\
+  #h(2em)for each item in flowPlanItems:\
+  #h(4em)输入起止Hub、流量、容量、负载率、边成本和成本占比；\
+  #h(2em)要求生成瓶颈分析、成本异常提示、建议列表和管理摘要。\
+  \
+  ExpectedOutput:\
+  #h(2em)bottleneckAnalysis, costAnomalyWarning, suggestions, summary
+]
+
+除末端调度与全国运力规划外，路径规划模块也保留了轻量级LLM辅助能力，用于候选路线裁决或战略绕行路点建议。但该部分不改变路径规划的基本约束：完整轨迹仍由GraphHopper路网和A\*算法生成，模型输出需经过候选索引或上海区域坐标校验，异常时回退为标准A\*路线。
+
 === Hub-and-Spoke 完整配送流程
 
 基于上述算法与服务能力，系统形成了完整的Hub-and-Spoke配送闭环@ref36。该流程涉及订单服务、物流服务与运输员配送服务三个核心服务的跨服务协作，以下按时间顺序描述完整时序：
