@@ -27,7 +27,7 @@
     student_id: "21122119",
     name: "付苗",
     supervisor: "牛志华",
-    date: "2025年2月20日起6月2日止",
+    date: "2026年2月20日起6月2日止",
   ),
   fonts: (
     fallback: false,
@@ -56,9 +56,9 @@
 
 // 显示声明
 #declare(
-  author-sign: [付苗],
+  author-sign: none,
   supervisor-sign: none,
-  date: [2025年6月],
+  date: none,
 )
 
 #abstract(
@@ -1542,7 +1542,7 @@ Hub选择提示词的核心约束是"只在候选集合内选择"，避免模型
 
   上海大学
 
-  2025年6月
+  2026年6月
 ]
 
 // 显示封底

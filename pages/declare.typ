@@ -36,7 +36,7 @@
     签 名：#uline(5.5em, place(center+bottom,author-sign))
     日 期：#uline(
       5.5em,
-      if date == none { datetime.today().display("[year].[month].[day]") } else { date },
+      if date == none { [] } else { date },
     )
     #linebreak()
     #linebreak()
@@ -55,7 +55,7 @@
 
     签 名：#uline(5.5em, place(center+bottom, author-sign))
     指导教师签名：#uline(5.5em, place(center+bottom,supervisor-sign))
-    日 期：#uline(5.5em, if date == none { datetime.today().display("[year].[month].[day]") } else { date })
+    日 期：#uline(5.5em, if date == none { [] } else { date })
   ]
 
   pagebreak(weak: true)
