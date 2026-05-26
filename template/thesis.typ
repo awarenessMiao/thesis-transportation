@@ -1314,33 +1314,27 @@ MCMF全国运力规划的关键参数配置如下。
 
 为验证系统各角色的交互效果，本节按发货用户、商户、运输员与管理员四个角色分别展示关键功能页面的运行截图。每张截图均以独立图注呈现，便于结合正文说明理解各角色的核心操作流程。
 
-=== 发货用户端运行结果
+=== 顾客端运行结果
 
-发货用户端覆盖发起寄件与订单追踪等核心功能。@create-order-pickup 展示了发起寄件页面，发货用户可选择取件地址、联系人信息并关联承运物，系统自动校验地址有效性。@create-order-confirm 展示了下单确认页面，汇总收发货地址、承运物信息与费用预估，确认后生成订单并触发后续履约流程。
+顾客端覆盖物流订单创建与订单追踪等核心功能。@create-order-pickup 展示了创建物流订单页面，顾客可选择承运物、填写数量、选择收件地址并补充订单备注，提交后生成物流订单；后续由商户仓库出库发货，系统再完成中转分配、路径规划与配送调度等履约流程。
 
 #imagex(
-  image("figures/create-order-pickup.png", width: 75%),
-  caption: [发起寄件页面],
+  image("figures/create-order-pickup.png", width: 105%),
+  caption: [顾客创建物流订单页面],
   label-name: "create-order-pickup",
-)
-
-#imagex(
-  image("figures/create-order-confirm.png", width: 75%),
-  caption: [下单确认页面],
-  label-name: "create-order-confirm",
 )
 
 订单生成后，用户可在订单详情中查看全程物流路线与阶段性履约节点。@customer-order-track-map 展示了订单追踪地图，系统在同一地图中叠加已走路径、预计路线、中转站与当前车辆位置；@customer-order-track-timeline 展示了物流节点时间线，可区分跨城干线运输、城市内转运和末端配送等环节，从而帮助用户理解订单当前所处的履约阶段。
 
 #imagex(
   image("figures/customer_order_detail_1.png", width: 80%),
-  caption: [发货用户订单追踪地图],
+  caption: [顾客订单追踪地图],
   label-name: "customer-order-track-map",
 )
 
 #imagex(
   image("figures/customer_order_detail_2.png", width: 80%),
-  caption: [发货用户物流节点时间线],
+  caption: [顾客物流节点时间线],
   label-name: "customer-order-track-timeline",
 )
 
