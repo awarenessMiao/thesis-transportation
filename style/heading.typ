@@ -61,18 +61,24 @@
       set align(center)
       set text(weight: "bold", size: zihao.xiaoer, stroke: 0.4pt)
       pagebreak(weak: true)
-      v(15pt)
-      counter(heading).display() + h(0.5em) + it.body
-      v(15pt)
+      block(sticky: true, breakable: false)[
+        #v(15pt)
+        #counter(heading).display()#h(0.5em)#it.body
+        #v(15pt)
+      ]
     } else if it.level == 2 {
       set text(weight: "regular", size: zihao.sihao)
-      v(0.8em)
-      counter(heading).display() + h(0.5em) + it.body
-      v(0.8em)
+      block(sticky: true, breakable: false)[
+        #v(0.8em)
+        #counter(heading).display()#h(0.5em)#it.body
+        #v(0.8em)
+      ]
     } else {
       set text(weight: "regular", size: zihao.xiaosi)
-      v(0.5em)
-      counter(heading).display() + h(0.5em) + it.body
+      block(sticky: true, breakable: false)[
+        #v(0.5em)
+        #counter(heading).display()#h(0.5em)#it.body
+      ]
     }
   }
   body
