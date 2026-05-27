@@ -191,6 +191,7 @@
   ]
   set table(stroke: none)
   show figure: set block(breakable: breakable)
+  set text(font: ("New Computer Modern", "STIXGeneral", "Apple Symbols", "Times New Roman", "Songti SC", "STSong"))
 
   figure(
     table(
