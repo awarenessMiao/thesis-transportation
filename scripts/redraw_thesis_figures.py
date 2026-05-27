@@ -693,11 +693,11 @@ def draw_core_business_flow(size: tuple[int, int] = (2600, 1180)) -> None:
     ]
     stage_styles = [
         ("1 下单受理", mono_fill, mono_outline),
-        ("2 仓配建模", mono_fill, mono_outline),
-        ("3 调度决策", mono_fill, mono_outline),
-        ("4 干线履约", mono_fill, mono_outline),
-        ("5 到站激活", mono_fill, mono_outline),
-        ("6 末端签收", mono_fill, mono_outline),
+        ("2 Hub 建模", mono_fill, mono_outline),
+        ("3 全国规划", mono_fill, mono_outline),
+        ("4 干线到达", mono_fill, mono_outline),
+        ("5 末端调度", mono_fill, mono_outline),
+        ("6 签收闭环", mono_fill, mono_outline),
     ]
 
     rounded_panel(draw, outer, fill="white", outline=mono_outline, width=outer_width, radius=corner_radius)
@@ -764,25 +764,33 @@ def draw_core_business_flow(size: tuple[int, int] = (2600, 1180)) -> None:
 
     b_submit = flow_box(1, 1, "发货用户 / 商户\n提交物流订单", accent=mono_outline, fill=mono_fill, size=29, height_value=100, margin_left=28, margin_right=46)
     b_create = flow_box(1, 2, "OrderService\n创建订单与明细", accent=mono_outline, fill=mono_fill, size=27, height_value=98, margin_left=30, margin_right=52)
-    b_assign = flow_box(2, 3, "LogisticsService\n分配起点仓 / 终点 Hub", accent=mono_outline, fill=mono_fill, size=25, height_value=86, vertical="top", margin_left=42, margin_right=72)
-    b_dispatch_preview = flow_box(2, 3, "写入调度池并进行\nK-Means 聚类预览", accent=mono_outline, fill=mono_fill, size=27, height_value=90, vertical="bottom", margin_left=54, margin_right=74, col_end=3)
-    b_confirm = flow_box(3, 1, "管理员确认\n调度批次", accent=mono_outline, fill=mono_fill, size=29, height_value=96, margin_left=78, margin_right=78)
-    b_trunk = flow_box(4, 3, "生成批次并发起\n干线运输", accent=mono_outline, fill=mono_fill, size=26, height_value=98, margin_left=78, margin_right=72)
-    b_activate = flow_box(5, 3, "到站后激活\n末端任务", accent=mono_outline, fill=mono_fill, size=27, height_value=96, margin_left=82, margin_right=70)
-    b_delivery = flow_box(5, 4, "DriverService 接收任务\n并执行末端配送", accent=mono_outline, fill=mono_fill, size=26, height_value=100, margin_left=78, margin_right=72, col_end=6)
-    b_done = flow_box(6, 1, "收件人签收\n闭环完成", accent=mono_outline, fill=mono_fill, size=29, height_value=96, margin_left=66, margin_right=54)
+    b_assign = flow_box(2, 3, "LogisticsService\n分配 origin / dest Hub", accent=mono_outline, fill=mono_fill, size=24, height_value=86, vertical="top", margin_left=42, margin_right=72)
+    b_pool = flow_box(2, 3, "跨城订单进入\n干线待处理池", accent=mono_outline, fill=mono_fill, size=26, height_value=90, vertical="bottom", margin_left=54, margin_right=60)
+    b_admin_mcmf = flow_box(3, 1, "管理员触发\nMCMF 全国规划", accent=mono_outline, fill=mono_fill, size=26, height_value=98, margin_left=58, margin_right=58)
+    b_mcmf = flow_box(3, 3, "MCMF 生成\ninter_city_batch", accent=mono_outline, fill=mono_fill, size=25, height_value=96, margin_left=48, margin_right=54)
+    b_arrive = flow_box(4, 3, "干线发车 / 到达\n写入目标 Hub 末端池", accent=mono_outline, fill=mono_fill, size=24, height_value=104, margin_left=42, margin_right=42)
+    b_admin_lastmile = flow_box(5, 1, "管理员生成\n末端调度方案", accent=mono_outline, fill=mono_fill, size=27, height_value=98, margin_left=58, margin_right=58)
+    b_kmeans = flow_box(5, 3, "K-Means 末端聚类\n创建配送批次", accent=mono_outline, fill=mono_fill, size=25, height_value=98, margin_left=48, margin_right=52)
+    b_delivery = flow_box(6, 4, "DriverService 接收\n末端任务并配送", accent=mono_outline, fill=mono_fill, size=25, height_value=104, margin_left=48, margin_right=52)
+    b_done = flow_box(6, 1, "收件人签收\n闭环完成", accent=mono_outline, fill=mono_fill, size=29, height_value=96, margin_left=58, margin_right=54)
 
     create_assign_end = anchor(b_assign, "left", 0.48)
     create_assign_start = anchor_at_y(b_create, "right", create_assign_end[1])
     assign_route_x = create_assign_end[0] - u(34)
-    assign_preview_start = anchor(b_assign, "right", 0.50)
-    preview_entry = anchor_at_x(b_dispatch_preview, "top", assign_preview_start[0] + u(74))
-    confirm_x = (b_confirm[0] + b_confirm[2]) // 2
-    preview_confirm_start = anchor_at_x(b_dispatch_preview, "top", confirm_x)
-    trunk_entry = anchor(b_trunk, "top")
-    trunk_turn_y = trunk_entry[1] - u(34)
-    delivery_entry = anchor_at_x(b_delivery, "top", anchor(b_activate, "bottom")[0])
-    activate_delivery_start = anchor_at_x(b_activate, "bottom", delivery_entry[0])
+    assign_pool_start = anchor(b_assign, "bottom")
+    assign_pool_end = anchor(b_pool, "top")
+    pool_admin_x = (b_admin_mcmf[0] + b_admin_mcmf[2]) // 2
+    pool_admin_start = anchor_at_x(b_pool, "top", pool_admin_x)
+    pool_admin_end = anchor(b_admin_mcmf, "bottom")
+    admin_mcmf_start = anchor(b_admin_mcmf, "bottom")
+    mcmf_entry = anchor_at_x(b_mcmf, "top", admin_mcmf_start[0])
+    arrive_admin_x = (b_admin_lastmile[0] + b_admin_lastmile[2]) // 2
+    arrive_admin_start = anchor_at_x(b_arrive, "top", arrive_admin_x)
+    arrive_admin_end = anchor(b_admin_lastmile, "bottom")
+    admin_lastmile_start = anchor(b_admin_lastmile, "bottom")
+    kmeans_entry = anchor_at_x(b_kmeans, "top", admin_lastmile_start[0])
+    delivery_entry = anchor(b_delivery, "left", 0.50)
+    kmeans_delivery_start = anchor_at_y(b_kmeans, "right", delivery_entry[1])
     delivery_done_end = anchor(b_done, "bottom")
     delivery_done_start = anchor_at_x(b_delivery, "top", delivery_done_end[0])
 
@@ -802,34 +810,45 @@ def draw_core_business_flow(size: tuple[int, int] = (2600, 1180)) -> None:
     )
     draw_arrow_path(
         draw,
-        [assign_preview_start, (preview_entry[0], assign_preview_start[1]), preview_entry],
+        [assign_pool_start, assign_pool_end],
         width=connector_width,
         arrow_length=u(18),
         arrow_half_width=u(8),
     )
     draw_arrow_path(
         draw,
-        [preview_confirm_start, anchor(b_confirm, "bottom")],
+        [pool_admin_start, pool_admin_end],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+        label=("等待规划", (pool_admin_start[0] + u(18), pool_admin_start[1] - u(28))),
+    )
+    draw_arrow_path(
+        draw,
+        [admin_mcmf_start, mcmf_entry],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+    )
+    draw_arrow_path(draw, [anchor(b_mcmf, "right", 0.5), anchor(b_arrive, "left", 0.5)], width=connector_width, arrow_length=u(18), arrow_half_width=u(8))
+    draw_arrow_path(
+        draw,
+        [arrive_admin_start, arrive_admin_end],
+        width=connector_width,
+        arrow_length=u(18),
+        arrow_half_width=u(8),
+        label=("到达后", (arrive_admin_start[0] + u(16), arrive_admin_start[1] - u(28))),
+    )
+    draw_arrow_path(
+        draw,
+        [admin_lastmile_start, kmeans_entry],
         width=connector_width,
         arrow_length=u(18),
         arrow_half_width=u(8),
     )
     draw_arrow_path(
         draw,
-        [
-            anchor(b_confirm, "bottom"),
-            (confirm_x, trunk_turn_y),
-            (trunk_entry[0], trunk_turn_y),
-            trunk_entry,
-        ],
-        width=connector_width,
-        arrow_length=u(18),
-        arrow_half_width=u(8),
-    )
-    draw_arrow_path(draw, [anchor(b_trunk, "right", 0.5), anchor(b_activate, "left", 0.5)], width=connector_width, arrow_length=u(18), arrow_half_width=u(8))
-    draw_arrow_path(
-        draw,
-        [activate_delivery_start, delivery_entry],
+        [kmeans_delivery_start, delivery_entry],
         width=connector_width,
         arrow_length=u(18),
         arrow_half_width=u(8),
