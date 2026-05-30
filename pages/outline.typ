@@ -7,14 +7,15 @@
   show outline.entry: it => context {
     if it.level == 1 {
       set text(font: ziti.heiti.get(), size: 14pt)
-      if not compact { v(0.5em) }
+      let tail-entry = it.element.body in ([结论], [参考文献], [致#h(1em)谢])
+      if not compact { v(if tail-entry { 0.05em } else { 0.5em }) }
       if it.element.supplement == [正文] {
         set text(weight: "bold")
         it
       } else {
         it
       }
-      if not compact { v(0.5em) }
+      if not compact { v(if tail-entry { 0.05em } else { 0.5em }) }
     } else if it.level == 2 {
       if not compact { v(0.3em) }
       set text(font: ziti.songti.get(), size: 12pt)
