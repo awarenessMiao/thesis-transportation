@@ -111,7 +111,7 @@
   rows: auto,
   stroke: 1pt + black,
   caption: auto,
-  breakable: false,
+  breakable: true,
   label-name: "",
 ) = context {
   set figure.caption(position: top)
